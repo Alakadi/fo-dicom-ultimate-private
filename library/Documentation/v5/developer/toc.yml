@@ -1,0 +1,16 @@
+- name: Developer
+  href: index.md
+- name: Build process
+  expanded: true
+  items:
+  - name: Build Notes
+    href: buildnotes.md
+  - name: NuGet packaging
+    href: packaging.md
+- name: Contributing
+  expanded: true
+  items:
+  - name: Contributing guidelines
+    href: CONTRIBUTING.html
+  - name: List of Contributers
+    href: Contributors.html

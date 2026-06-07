@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>FellowOakDicom.Dump</RootNamespace>
+    <UseWPF>true</UseWPF>
+    <AssemblyName>fo-dicom.Dump</AssemblyName>
+    <Platforms>AnyCPU;x64</Platforms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="fo-dicom.Codecs" Version="5.16.5.1" />
+    <PackageReference Include="SkiaSharp" Version="3.119.2" />
+    <PackageReference Include="SkiaSharp.Views.WPF" Version="3.119.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\FO-DICOM.Core\FO-DICOM.Core.csproj" />
+    <ProjectReference Include="..\..\Platform\FO-DICOM.Imaging.SkiaSharp\FO-DICOM.Imaging.SkiaSharp.csproj" />
+  </ItemGroup>
+
+</Project>

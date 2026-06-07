@@ -1,0 +1,59 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net10.0-windows;net9.0-windows;net8.0-windows</TargetFrameworks>
+		<RootNamespace>FellowOakDicom.Tests</RootNamespace>
+		<IsPackable>false</IsPackable>
+		<SignAssembly>true</SignAssembly>
+		<AssemblyOriginatorKeyFile>fo-dicom.snk</AssemblyOriginatorKeyFile>
+		<AssemblyName>fo-dicom.Tests.Windows</AssemblyName>
+		<LangVersion>14.0</LangVersion>
+		<OutputType>Library</OutputType>
+		<Platforms>AnyCPU;x64</Platforms>
+		<EnableWindowsTargeting>true</EnableWindowsTargeting>
+		<!-- 
+      Suppress warning CS8002 because Dicom.NativeCodecs is not strong named, 
+      but since .NET Core you can reference unsigned assemblies from signed assemblies without issues
+     -->
+		<NoWarn>CS8002</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Ben.Demystifier" Version="0.4.1" />
+		<PackageReference Include="coverlet.collector" Version="10.0.1">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="fo-dicom.Codecs" Version="5.16.7" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.8" />
+		<PackageReference Include="xunit" Version="2.9.3" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+		<PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\Platform\FO-DICOM.Imaging.ImageSharp\FO-DICOM.Imaging.ImageSharp.csproj" />
+		<ProjectReference Include="..\..\Platform\FO-DICOM.Imaging.Desktop\FO-DICOM.Imaging.Desktop.csproj" />
+		<ProjectReference Include="..\..\FO-DICOM.Core\FO-DICOM.Core.csproj" />
+		<ProjectReference Include="..\..\Serialization\FO-DICOM.Json\FO-DICOM.Json.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Copy test data from main test project -->
+		<None Include="..\FO-DICOM.Tests\Test Data\CT-MONO2-16-ankle">
+			<Link>Test Data\CT-MONO2-16-ankle</Link>
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Link TestData helper class from main test project -->
+		<Compile Include="..\FO-DICOM.Tests\TestData.cs">
+			<Link>TestData.cs</Link>
+		</Compile>
+	</ItemGroup>
+</Project>

@@ -1,0 +1,46 @@
+- name: Installation
+  expanded: true
+  items:
+  - name: Prerequisites
+    href: prerequisites.md
+- name: Workflow
+  expanded: true
+  items:
+  - name: Asynchronous operations
+    href: async_ops.md
+- name: Data manipulation
+  expanded: true
+  items:
+  - name: Getting data
+    href: getting_data.md
+  - name: Adding private tags to dictionary
+    href: add_private_tags.md
+- name: Imaging
+  expanded: true
+  items:
+  - name: Supported Transfer Syntaxes
+    href: xfer_syntaxes.md
+  - name: Image rendering
+    href: image_rendering.md
+  - name: Raw pixel data
+    href: raw_pixel_data.md
+  - name: LUT application
+    href: lut_application.md
+- name: Usage
+  expanded: true
+  items:
+  - name: Ssl connections
+    href: ssl.md
+  - name: Configurations
+    href: configuration.md
+  - name: Logging configuration  
+    href: logging_config.md
+  - name: Instrumentation
+    href: instrumentation.md
+- name: Miscellaneous
+  expanded: true
+  items:
+  - name: Upgrade from version 4 to version 5
+    href: upgrade4to5.md
+  - name: Sample applications (external repository)
+    href: https://github.com/fo-dicom/fo-dicom-samples
