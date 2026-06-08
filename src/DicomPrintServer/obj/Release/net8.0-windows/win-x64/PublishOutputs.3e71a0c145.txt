@@ -1,0 +1,4 @@
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Release\net8.0-windows\win-x64\publish\appsettings.Development.json
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Release\net8.0-windows\win-x64\publish\appsettings.json
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Release\net8.0-windows\win-x64\publish\DicomPrintServer.pdb
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Release\net8.0-windows\win-x64\publish\DicomPrintServer.exe

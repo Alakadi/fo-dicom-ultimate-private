@@ -13,13 +13,16 @@ namespace DicomPrintServer.Services
     /// <summary>
     /// M2-A + M2-B + M2-C + M2-D: تصدير FilmBox / ImageBox إلى JPG.
     ///
-    /// Pipeline:
+    /// Pipeline (الوضع العادي):
     ///   DicomImage.RenderImage() → IImage.AsSharpImage() → Image<Bgra32>
     ///   → ImageProcessor (Gamma/Contrast/WL) → AnnotationRenderer (Header/Footer/WM)
     ///   → JpegEncoder → .jpg file
     ///
-    /// وضع المعايرة: إذا CalibrationMode=true، ينتج نمط TG18QC/GreyRamp/SMPTE
-    /// بدلاً من الصورة الأصلية.
+    /// وضع المعايرة الفردي  (CalibrationMode=true):
+    ///   يتجاهل محتوى FilmBox ويُنتج نمط TG18QC/GreyRamp/SMPTE الواحد.
+    ///
+    /// وضع المعايرة متعددة المتغيرات (MultiVariantCalibration=true):
+    ///   يُنتج صورة مركّبة: شبكة لوحات كل لوحة بإعدادات Gamma/Contrast مختلفة.
     /// </summary>
     public class JpgExporter
     {
@@ -34,10 +37,7 @@ namespace DicomPrintServer.Services
             _calibration = calibration;
         }
 
-        // ─── نوع مساعد للمستطيلات (بدون تبعية لـ Rect<T> الداخلية) ────────
         private record struct BoxRect(float X, float Y, float W, float H);
-
-        // ─── حجم الفيلم بالإنش ────────────────────────────────────────────
         private record struct FilmInches(float Width, float Height);
 
         // ══════════════════════════════════════════════════════════════════════
@@ -56,27 +56,52 @@ namespace DicomPrintServer.Services
 
             try
             {
-                // وضع المعايرة — يتجاهل محتوى FilmBox ويُنتج نمط اختبار
+                int fw = (int)(8.5f * config.FilmResolutionDpi);
+                int fh = (int)(11f  * config.FilmResolutionDpi);
+
+                // ── وضع المعايرة متعددة المتغيرات (يأتي أولاً) ──────────────
+                if (config.ImageProcessing.MultiVariantCalibration
+                    && config.ImageProcessing.CalibrationVariants.Count > 0)
+                {
+                    var patType = Enum.TryParse<CalibrationPatternType>(
+                        config.ImageProcessing.CalibrationPattern, true, out var p2)
+                        ? p2 : CalibrationPatternType.GreyRamp;
+
+                    var mvPath = _calibration.SaveMultiVariantImage(
+                        config.ImageProcessing.CalibrationVariants,
+                        outputFolder,
+                        fw, fh,
+                        config.JpgQuality,
+                        patType);
+
+                    _logger.LogInformation(
+                        "Multi-variant calibration saved: {Path} ({Count} variants)",
+                        mvPath, config.ImageProcessing.CalibrationVariants.Count);
+
+                    created.Add(mvPath);
+                    return created;
+                }
+
+                // ── وضع المعايرة الفردي ──────────────────────────────────────
                 if (config.ImageProcessing.CalibrationMode)
                 {
                     var patternType = Enum.TryParse<CalibrationPatternType>(
                         config.ImageProcessing.CalibrationPattern, true, out var p)
                         ? p : CalibrationPatternType.TG18QC;
 
-                    var path = _calibration.SaveCalibrationImage(
-                        patternType, outputFolder,
-                        (int)(8.5f * config.FilmResolutionDpi),
-                        (int)(11f  * config.FilmResolutionDpi),
-                        config.JpgQuality);
+                    var calPath = _calibration.SaveCalibrationImage(
+                        patternType, outputFolder, fw, fh, config.JpgQuality);
 
-                    created.Add(path);
+                    created.Add(calPath);
                     return created;
                 }
 
+                // ── وضع الطباعة الطبيعي ──────────────────────────────────────
                 using var filmImage = RenderFilmBox(filmBox, config, annotationCtx);
                 if (filmImage == null)
                 {
-                    _logger.LogWarning("FilmBox {UID} — no renderable images", filmBox.SOPInstanceUID.UID);
+                    _logger.LogWarning("FilmBox {UID} — no renderable images",
+                        filmBox.SOPInstanceUID.UID);
                     return created;
                 }
 
@@ -90,7 +115,8 @@ namespace DicomPrintServer.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "ExportFilmBox failed for {UID}", filmBox.SOPInstanceUID.UID);
+                _logger.LogError(ex, "ExportFilmBox failed for {UID}",
+                    filmBox.SOPInstanceUID.UID);
             }
 
             return created;
@@ -116,7 +142,6 @@ namespace DicomPrintServer.Services
                     using var img = RenderImageBox(imageBox);
                     if (img == null) continue;
 
-                    // تطبيق معالجة الصورة
                     ImageProcessor.Process(img, config.ImageProcessing);
 
                     var path = Path.Combine(outputFolder,
@@ -127,7 +152,8 @@ namespace DicomPrintServer.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "ExportImageBox[{Pos}] failed", imageBox.ImageBoxPosition);
+                    _logger.LogError(ex, "ExportImageBox[{Pos}] failed",
+                        imageBox.ImageBoxPosition);
                 }
             }
 
@@ -138,10 +164,6 @@ namespace DicomPrintServer.Services
         // الرسم الداخلي
         // ══════════════════════════════════════════════════════════════════════
 
-        /// <summary>
-        /// يُحوّل FilmBox كاملة إلى Image<Bgra32> مع التخطيط الصحيح
-        /// وتطبيق Gamma/Contrast/Annotations.
-        /// </summary>
         public Image<Bgra32>? RenderFilmBox(
             FilmBox filmBox,
             ListenerConfig config,
@@ -150,11 +172,12 @@ namespace DicomPrintServer.Services
             if (!filmBox.BasicImageBoxes.Any(ib =>
                     ib.ImageSequence?.Contains(DicomTag.PixelData) == true))
             {
-                _logger.LogWarning("FilmBox {UID} has no pixel data", filmBox.SOPInstanceUID.UID);
+                _logger.LogWarning("FilmBox {UID} has no pixel data",
+                    filmBox.SOPInstanceUID.UID);
                 return null;
             }
 
-            var size   = GetFilmSizeInInches(filmBox.FilmSizeID);
+            var size    = GetFilmSizeInInches(filmBox.FilmSizeID);
             int canvasW = Math.Max(1, (int)(size.Width  * config.FilmResolutionDpi));
             int canvasH = Math.Max(1, (int)(size.Height * config.FilmResolutionDpi));
 
@@ -174,34 +197,27 @@ namespace DicomPrintServer.Services
                     using var rendered = RenderImageBox(imageBox);
                     if (rendered == null) continue;
 
-                    // M2-B: Window/Level
                     if (config.ImageProcessing.WindowWidth > 0)
                         ImageProcessor.ApplyWindowLevel(rendered,
                             config.ImageProcessing.WindowWidth,
                             config.ImageProcessing.WindowCenter);
 
-                    // M2-B: Gamma / Contrast / Brightness / Sharpness / Invert
                     ImageProcessor.Process(rendered, config.ImageProcessing);
-
                     DrawImageIntoCanvas(canvas, rendered, boxes[i]);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "ImageBox[{Pos}] render failed", imageBox.ImageBoxPosition);
+                    _logger.LogError(ex, "ImageBox[{Pos}] render failed",
+                        imageBox.ImageBoxPosition);
                 }
             }
 
-            // M2-C: Header / Footer / Watermark
             if (annotationCtx != null)
                 AnnotationRenderer.DrawAnnotations(canvas, annotationCtx, config.Annotations);
 
             return canvas;
         }
 
-        /// <summary>
-        /// يُحوّل FilmBox كاملة إلى Image<Bgra32> (للطباعة عبر GDI).
-        /// نسخة مبسّطة بدون AnnotationContext.
-        /// </summary>
         public Image<Bgra32>? RenderFilmBox(FilmBox filmBox, int dpi = 150)
         {
             var dummyConfig = new ListenerConfig { FilmResolutionDpi = dpi };
@@ -225,7 +241,6 @@ namespace DicomPrintServer.Services
 
             string type = parts[0].ToUpperInvariant();
 
-            // STANDARD\Cols,Rows
             if (type == "STANDARD" && parts.Length >= 3
                 && int.TryParse(parts[1], out int cols)
                 && int.TryParse(parts[2], out int rows)
@@ -240,7 +255,6 @@ namespace DicomPrintServer.Services
                 return list.ToArray();
             }
 
-            // ROW\R1,R2... كل صف له عدد أعمدة مختلف
             if (type == "ROW" && parts.Length >= 2)
             {
                 var rowSizes = parts.Skip(1)
@@ -256,7 +270,6 @@ namespace DicomPrintServer.Services
                 return list.ToArray();
             }
 
-            // COL\C1,C2... كل عمود له عدد صفوف مختلف
             if (type == "COL" && parts.Length >= 2)
             {
                 var colSizes = parts.Skip(1)
@@ -287,7 +300,8 @@ namespace DicomPrintServer.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "RenderImageBox[{Pos}] failed", imageBox.ImageBoxPosition);
+                _logger.LogError(ex, "RenderImageBox[{Pos}] failed",
+                    imageBox.ImageBoxPosition);
                 return null;
             }
         }

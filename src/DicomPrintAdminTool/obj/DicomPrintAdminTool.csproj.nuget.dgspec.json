@@ -1,20 +1,20 @@
 {
   "format": 1,
   "restore": {
-    "/home/runner/workspace/src/DicomPrintAdminTool/DicomPrintAdminTool.csproj": {}
+    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminTool\\DicomPrintAdminTool.csproj": {}
   },
   "projects": {
-    "/home/runner/workspace/src/DicomPrintAdminTool/DicomPrintAdminTool.csproj": {
+    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminTool\\DicomPrintAdminTool.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/home/runner/workspace/src/DicomPrintAdminTool/DicomPrintAdminTool.csproj",
+        "projectUniqueName": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminTool\\DicomPrintAdminTool.csproj",
         "projectName": "DicomPrintAdminTool",
-        "projectPath": "/home/runner/workspace/src/DicomPrintAdminTool/DicomPrintAdminTool.csproj",
-        "packagesPath": "/home/runner/.nuget/packages/",
-        "outputPath": "/home/runner/workspace/src/DicomPrintAdminTool/obj/",
+        "projectPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminTool\\DicomPrintAdminTool.csproj",
+        "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
+        "outputPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminTool\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "/home/runner/.nuget/NuGet/NuGet.Config"
+          "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0-windows"
@@ -32,11 +32,6 @@
           "warnAsError": [
             "NU1605"
           ]
-        },
-        "restoreAuditProperties": {
-          "enableAudit": "true",
-          "auditLevel": "low",
-          "auditMode": "direct"
         }
       },
       "frameworks": {
@@ -58,7 +53,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "/nix/store/1blv644vinali34masnw6g5fjjjaa4y6-dotnet-sdk-8.0.416/share/dotnet/sdk/8.0.416/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.100-rc.1.23463.5/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

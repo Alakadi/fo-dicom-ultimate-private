@@ -1,0 +1,15 @@
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\bin\Release\net8.0-windows\DicomPrintAdminTool.exe
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\bin\Release\net8.0-windows\DicomPrintAdminTool.deps.json
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\bin\Release\net8.0-windows\DicomPrintAdminTool.runtimeconfig.json
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\bin\Release\net8.0-windows\DicomPrintAdminTool.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\bin\Release\net8.0-windows\DicomPrintAdminTool.pdb
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\DicomPrintAdminTool.GeneratedMSBuildEditorConfig.editorconfig
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\DicomPrintAdminTool.AssemblyInfoInputs.cache
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\DicomPrintAdminTool.AssemblyInfo.cs
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\DicomPrintAdminTool.csproj.CoreCompileInputs.cache
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\DicomPrintAdminTool.sourcelink.json
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\DicomPrintAdminTool.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\refint\DicomPrintAdminTool.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\DicomPrintAdminTool.pdb
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\DicomPrintAdminTool.genruntimeconfig.cache
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintAdminTool\obj\Release\net8.0-windows\ref\DicomPrintAdminTool.dll

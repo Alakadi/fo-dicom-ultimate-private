@@ -12,7 +12,7 @@ using System.Text.Json;
 //   admintool info <file>      — يعرض معلومات الترخيص
 // ============================================================
 
-const string Version = "1.0.0";
+const string Version = "2.0.0";
 
 Console.OutputEncoding = Encoding.UTF8;
 Console.WriteLine("╔══════════════════════════════════════════════╗");
@@ -91,28 +91,48 @@ static int DoIssue(string[] args)
     string customerId   = Prompt("Customer ID (e.g. HOSP-001):", "HOSP-001");
     string customerName = Prompt("Customer Name (Arabic/English):", "مستشفى الملك فهد");
     string licType      = PromptChoice("License Type:", new[] { "Full", "Trial" }, "Full");
-    int    maxPorts     = int.Parse(Prompt("Max Ports:", "4"));
-    string expStr       = Prompt("Expiry Date (YYYY-MM-DD, blank = never):", "");
+    int    maxPorts     = int.TryParse(Prompt("Max Ports:", "4"), out var mp) ? mp : 4;
+
+    // ── الحد الأقصى للعمليات (MaxOperations) ─────────────────────────────
+    Console.WriteLine();
+    Console.WriteLine("  Max Operations — الحد الأقصى لعمليات الطباعة (0 = غير محدود):");
+    int maxOps = int.TryParse(Prompt("Max Operations:", "0"), out var mo) ? mo : 0;
+    int? maxOperations = maxOps > 0 ? maxOps : null;
+
+    // ── مدة التجربة بالساعات (TrialHours — فقط للترخيص Trial) ───────────
+    int? trialHours = null;
+    if (licType == "Trial")
+    {
+        Console.WriteLine();
+        Console.WriteLine("  Trial Duration in HOURS — مدة التجربة بالساعات (0 = 14 يوم افتراضي):");
+        int th = int.TryParse(Prompt("Trial Hours:", "0"), out var t) ? t : 0;
+        trialHours = th > 0 ? th : null;
+    }
+
+    string expStr = Prompt("Expiry Date (YYYY-MM-DD, blank = never):", "");
 
     DateTime? expiresAt = null;
     if (!string.IsNullOrWhiteSpace(expStr) && DateTime.TryParse(expStr, out var exp))
         expiresAt = exp.ToUniversalTime();
 
     Console.WriteLine("Features (comma-separated, blank = ALL):");
-    Console.WriteLine("  Available: JPG, PDF, WhatsApp, MultiPort, Calibration");
-    string featStr   = Prompt("Features:", "");
+    Console.WriteLine("  Available: JPG, PDF, WhatsApp, MultiPort, Calibration, HisRis");
+    string featStr = Prompt("Features:", "");
     List<string>? features = string.IsNullOrWhiteSpace(featStr)
         ? null
         : featStr.Split(',').Select(f => f.Trim()).Where(f => f.Length > 0).ToList();
 
     Console.WriteLine();
     Console.WriteLine("═══ Summary ══════════════════════════════════");
-    Console.WriteLine($"  Customer ID:   {customerId}");
-    Console.WriteLine($"  Customer Name: {customerName}");
-    Console.WriteLine($"  License Type:  {licType}");
-    Console.WriteLine($"  Max Ports:     {maxPorts}");
-    Console.WriteLine($"  Expires:       {(expiresAt.HasValue ? expiresAt.Value.ToString("yyyy-MM-dd") : "Never")}");
-    Console.WriteLine($"  Features:      {(features == null ? "ALL" : string.Join(", ", features))}");
+    Console.WriteLine($"  Customer ID:    {customerId}");
+    Console.WriteLine($"  Customer Name:  {customerName}");
+    Console.WriteLine($"  License Type:   {licType}");
+    Console.WriteLine($"  Max Ports:      {maxPorts}");
+    Console.WriteLine($"  Max Operations: {(maxOperations.HasValue ? maxOperations.Value.ToString() : "Unlimited (غير محدود)")}");
+    if (trialHours.HasValue)
+        Console.WriteLine($"  Trial Hours:    {trialHours.Value} ساعة ({trialHours.Value / 24.0:F1} يوم)");
+    Console.WriteLine($"  Expires:        {(expiresAt.HasValue ? expiresAt.Value.ToString("yyyy-MM-dd") : "Never")}");
+    Console.WriteLine($"  Features:       {(features == null ? "ALL" : string.Join(", ", features))}");
     Console.WriteLine();
 
     string confirm = Prompt("Confirm? (yes/no):", "yes");
@@ -122,16 +142,17 @@ static int DoIssue(string[] args)
         return 0;
     }
 
-    // إنشاء الترخيص
     var licenseData = new LicenseData
     {
-        CustomerId   = customerId,
-        CustomerName = customerName,
-        LicenseType  = licType,
-        IssuedAt     = DateTime.UtcNow,
-        ExpiresAt    = expiresAt,
-        MaxPorts     = maxPorts,
-        Features     = features
+        CustomerId    = customerId,
+        CustomerName  = customerName,
+        LicenseType   = licType,
+        IssuedAt      = DateTime.UtcNow,
+        ExpiresAt     = expiresAt,
+        MaxPorts      = maxPorts,
+        MaxOperations = maxOperations,
+        TrialHours    = trialHours,
+        Features      = features
     };
 
     string signedJson = CreateSignedLicense(licenseData, privateKeyPem);
@@ -146,6 +167,14 @@ static int DoIssue(string[] args)
     Console.WriteLine("  • Next to DicomPrintServer.exe  (as license.key)");
     Console.WriteLine("  • OR: %ProgramData%\\DicomPrintServer\\license.key");
 
+    if (maxOperations.HasValue)
+    {
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"\n🔒 This license is limited to {maxOperations.Value} print operations.");
+        Console.WriteLine("   Counter is encrypted and machine-locked — tamper-resistant.");
+        Console.ResetColor();
+    }
+
     return 0;
 }
 
@@ -159,11 +188,11 @@ static int DoVerify(string[] args)
     string licFile    = args[1];
     string pubKeyFile = args.Length > 2 ? args[2] : "public_key.pem";
 
-    if (!File.Exists(licFile))   { Console.Error.WriteLine($"File not found: {licFile}");   return 1; }
-    if (!File.Exists(pubKeyFile)){ Console.Error.WriteLine($"Key not found: {pubKeyFile}"); return 1; }
+    if (!File.Exists(licFile))    { Console.Error.WriteLine($"File not found: {licFile}");   return 1; }
+    if (!File.Exists(pubKeyFile)) { Console.Error.WriteLine($"Key not found: {pubKeyFile}");  return 1; }
 
-    string licJson    = File.ReadAllText(licFile, Encoding.UTF8);
-    string publicPem  = File.ReadAllText(pubKeyFile, Encoding.UTF8);
+    string licJson   = File.ReadAllText(licFile, Encoding.UTF8);
+    string publicPem = File.ReadAllText(pubKeyFile, Encoding.UTF8);
 
     bool valid = VerifyLicense(licJson, publicPem);
 
@@ -200,15 +229,16 @@ static int DoInfo(string[] args)
         var root = doc.RootElement;
 
         Console.WriteLine("\n═══ License Information ══════════════════════");
-        PrintField("Customer ID",   root, "CustomerId");
-        PrintField("Customer Name", root, "CustomerName");
-        PrintField("License Type",  root, "LicenseType");
-        PrintField("Issued At",     root, "IssuedAt");
-        PrintField("Expires At",    root, "ExpiresAt", "Never");
-        PrintField("Max Ports",     root, "MaxPorts");
-        PrintField("Features",      root, "Features", "ALL");
+        PrintField("Customer ID",    root, "CustomerId");
+        PrintField("Customer Name",  root, "CustomerName");
+        PrintField("License Type",   root, "LicenseType");
+        PrintField("Issued At",      root, "IssuedAt");
+        PrintField("Expires At",     root, "ExpiresAt",     "Never");
+        PrintField("Max Ports",      root, "MaxPorts");
+        PrintField("Max Operations", root, "MaxOperations", "Unlimited");
+        PrintField("Trial Hours",    root, "TrialHours",    "N/A (uses 14-day default)");
+        PrintField("Features",       root, "Features",      "ALL");
 
-        // فحص انتهاء الصلاحية
         if (root.TryGetProperty("ExpiresAt", out var expEl)
             && expEl.ValueKind != JsonValueKind.Null
             && DateTime.TryParse(expEl.GetString(), out var exp))
@@ -267,7 +297,7 @@ static void PrintField(string label, JsonElement root, string key, string? fallb
             ? string.Join(", ", el.EnumerateArray().Select(e => e.GetString() ?? ""))
             : el.ToString();
     }
-    Console.WriteLine($"  {label,-18}: {val}");
+    Console.WriteLine($"  {label,-20}: {val}");
 }
 
 static int DoHelp()    { ShowHelp(); return 0; }
@@ -283,9 +313,14 @@ static void ShowHelp()
     Console.WriteLine();
     Console.WriteLine("Workflow:");
     Console.WriteLine("  1. admintool keygen");
-    Console.WriteLine("  2. Copy public_key.pem into LicenseManager.PublicKeyPem");
+    Console.WriteLine("  2. Copy public_key.pem into LicenseManager.cs (PublicKeyPem constant)");
     Console.WriteLine("  3. admintool issue  → creates license_<id>.key");
     Console.WriteLine("  4. Send license_<id>.key to customer as license.key");
+    Console.WriteLine();
+    Console.WriteLine("New in v2:");
+    Console.WriteLine("  • MaxOperations: limit total print operations per license");
+    Console.WriteLine("  • TrialHours:    set trial duration in hours (e.g. 2 hours)");
+    Console.WriteLine("  Both fields are RSA-signed — tamper-proof.");
 }
 
 // ════════════════════════════════════════════════════════════
@@ -299,18 +334,20 @@ static string CreateSignedLicense(LicenseData data, string privateKeyPem)
 
     var payload = new Dictionary<string, object?>
     {
-        ["CustomerId"]   = data.CustomerId,
-        ["CustomerName"] = data.CustomerName,
-        ["LicenseType"]  = data.LicenseType,
-        ["IssuedAt"]     = data.IssuedAt.ToString("o"),
-        ["ExpiresAt"]    = data.ExpiresAt?.ToString("o"),
-        ["MaxPorts"]     = data.MaxPorts,
-        ["Features"]     = (object?)data.Features
+        ["CustomerId"]    = data.CustomerId,
+        ["CustomerName"]  = data.CustomerName,
+        ["LicenseType"]   = data.LicenseType,
+        ["IssuedAt"]      = data.IssuedAt.ToString("o"),
+        ["ExpiresAt"]     = data.ExpiresAt?.ToString("o"),
+        ["MaxPorts"]      = data.MaxPorts,
+        ["MaxOperations"] = (object?)data.MaxOperations,
+        ["TrialHours"]    = (object?)data.TrialHours,
+        ["Features"]      = (object?)data.Features
     };
 
     string payloadJson = JsonSerializer.Serialize(payload,
         new JsonSerializerOptions { WriteIndented = false });
-    byte[] signature   = rsa.SignData(Encoding.UTF8.GetBytes(payloadJson),
+    byte[] signature = rsa.SignData(Encoding.UTF8.GetBytes(payloadJson),
         HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
     payload["Signature"] = Convert.ToBase64String(signature);
@@ -350,11 +387,13 @@ static bool VerifyLicense(string licJson, string publicKeyPem)
 
 internal class LicenseData
 {
-    public string   CustomerId   { get; set; } = "";
-    public string   CustomerName { get; set; } = "";
-    public string   LicenseType  { get; set; } = "Trial";
-    public DateTime IssuedAt     { get; set; } = DateTime.UtcNow;
-    public DateTime? ExpiresAt   { get; set; }
-    public int      MaxPorts     { get; set; } = 1;
-    public List<string>? Features { get; set; }
+    public string        CustomerId    { get; set; } = "";
+    public string        CustomerName  { get; set; } = "";
+    public string        LicenseType   { get; set; } = "Trial";
+    public DateTime      IssuedAt      { get; set; } = DateTime.UtcNow;
+    public DateTime?     ExpiresAt     { get; set; }
+    public int           MaxPorts      { get; set; } = 1;
+    public int?          MaxOperations { get; set; }
+    public int?          TrialHours    { get; set; }
+    public List<string>? Features      { get; set; }
 }

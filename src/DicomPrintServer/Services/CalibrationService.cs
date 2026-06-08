@@ -96,6 +96,135 @@ namespace DicomPrintServer.Services
         }
 
         // ────────────────────────────────────────────────────────────────────
+        // M2-D+: معايرة متعددة المتغيرات (Multi-Variant Calibration)
+        // ────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// يُنشئ صورة معايرة متعددة المتغيرات — شبكة لوحات (panels)، كل لوحة
+        /// تعرض نمط المعايرة الأساسي بإعدادات Gamma / Contrast / Brightness مختلفة.
+        ///
+        /// التخطيط التلقائي:
+        ///   1 متغير  → 1×1
+        ///   2 متغيرات → 2×1
+        ///   3–4      → 2×2
+        ///   5–6      → 3×2
+        ///   7+       → √N × √N (تقريباً)
+        /// </summary>
+        public Image<Bgra32> GenerateMultiVariantImage(
+            IList<Configuration.CalibrationVariant> variants,
+            int width       = 1200,
+            int height      = 900,
+            CalibrationPatternType basePattern = CalibrationPatternType.GreyRamp)
+        {
+            if (variants == null || variants.Count == 0)
+            {
+                _logger.LogWarning("No CalibrationVariants specified — generating single pattern");
+                return Generate(basePattern, width, height);
+            }
+
+            int count  = variants.Count;
+            int cols   = count <= 1 ? 1
+                       : count <= 2 ? 2
+                       : count <= 4 ? 2
+                       : count <= 6 ? 3
+                       : (int)Math.Ceiling(Math.Sqrt(count));
+            int rows   = (int)Math.Ceiling((double)count / cols);
+            int cellW  = Math.Max(1, width  / cols);
+            int cellH  = Math.Max(1, height / rows);
+            int labelH = 28;
+            int pad    = 3;
+
+            _logger.LogInformation(
+                "Generating multi-variant calibration: {N} panels — {Cols}×{Rows} grid ({Pattern})",
+                count, cols, rows, basePattern);
+
+            // لوحة قماشية كبيرة بخلفية داكنة
+            var canvas = new Image<Bgra32>(width, height, new Bgra32(18, 18, 18, 255));
+
+            // توليد النمط الأساسي بحجم خلية واحدة (بدون label)
+            int panelW = Math.Max(1, cellW - pad * 2);
+            int panelH = Math.Max(1, cellH - pad * 2 - labelH);
+            using var baseImg = Generate(basePattern, panelW, panelH);
+
+            canvas.Mutate(ctx =>
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    int col = i % cols;
+                    int row = i / cols;
+                    int x   = col * cellW;
+                    int y   = row * cellH;
+
+                    var variant = variants[i];
+
+                    // استنساخ النمط الأساسي وتطبيق معالجة المتغير
+                    using var panel = baseImg.Clone();
+                    var procCfg = new Configuration.ImageProcessingConfig
+                    {
+                        Gamma      = variant.Gamma,
+                        Contrast   = variant.Contrast,
+                        Brightness = variant.Brightness
+                    };
+                    ImageProcessor.Process(panel, procCfg);
+
+                    // رسم اللوحة
+                    ctx.DrawImage(panel, new Point(x + pad, y + pad), 1f);
+
+                    // إطار خارجي للخلية
+                    ctx.Draw(new Color(new Bgra32(80, 80, 80, 255)), 1f,
+                        new RectangleF(x + 1, y + 1, cellW - 2, cellH - 2));
+
+                    // خلفية التسمية (أسفل اللوحة)
+                    float lblY = y + cellH - labelH - 1;
+                    ctx.Fill(new Color(new Bgra32(0, 0, 0, 220)),
+                        new RectangleF(x + pad, lblY, cellW - pad * 2, labelH));
+
+                    // نص التسمية
+                    string label = !string.IsNullOrEmpty(variant.Label)
+                        ? variant.Label
+                        : $"γ={variant.Gamma:F2}  C={variant.Contrast:F2}  B={variant.Brightness:+0.##;-0.##;0}";
+
+                    var textOpts = new RichTextOptions(_labelFont)
+                    {
+                        Origin              = new PointF(x + cellW / 2f, lblY + labelH / 2f),
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment   = VerticalAlignment.Center
+                    };
+                    ctx.DrawText(textOpts, label, Color.Yellow);
+                }
+
+                // عنوان عام في الأسفل
+                DrawCenteredTitle(ctx,
+                    $"Multi-Variant Calibration — {basePattern} — {count} variants",
+                    width, height);
+            });
+
+            return canvas;
+        }
+
+        /// <summary>يُنشئ صورة المعايرة متعددة المتغيرات ويحفظها كـ JPG.</summary>
+        public string SaveMultiVariantImage(
+            IList<Configuration.CalibrationVariant> variants,
+            string outputFolder,
+            int width   = 1200,
+            int height  = 900,
+            int quality = 95,
+            CalibrationPatternType basePattern = CalibrationPatternType.GreyRamp)
+        {
+            Directory.CreateDirectory(outputFolder);
+            var ts   = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var path = Path.Combine(outputFolder, $"Calibration_MultiVariant_{ts}.jpg");
+
+            using var img = GenerateMultiVariantImage(variants, width, height, basePattern);
+            using var stream = File.OpenWrite(path);
+            img.SaveAsJpeg(stream,
+                new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = quality });
+
+            _logger.LogInformation("Multi-variant calibration image saved: {Path}", path);
+            return path;
+        }
+
+        // ────────────────────────────────────────────────────────────────────
         // TG18-QC: 18 حقل رمادي
         // ────────────────────────────────────────────────────────────────────
 

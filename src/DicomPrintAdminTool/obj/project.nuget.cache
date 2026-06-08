@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "yWgDNj7cUDY=",
+  "dgSpecHash": "hIoqEGQUnzDmqnCSEmTx2/0Qtcuz4Z0nyD2ZmGpBIMkHv2AyxUvb/yOtfnuWyKXmoky7Z6QKNNYfWlS5Uod6gQ==",
   "success": true,
-  "projectFilePath": "/home/runner/workspace/src/DicomPrintAdminTool/DicomPrintAdminTool.csproj",
+  "projectFilePath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminTool\\DicomPrintAdminTool.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }

@@ -1,20 +1,20 @@
 {
   "format": 1,
   "restore": {
-    "/home/runner/workspace/src/DicomPrintServer/DicomPrintServer.csproj": {}
+    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {}
   },
   "projects": {
-    "/home/runner/workspace/src/DicomPrintServer/DicomPrintServer.csproj": {
+    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "/home/runner/workspace/src/DicomPrintServer/DicomPrintServer.csproj",
+        "projectUniqueName": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
         "projectName": "DicomPrintServer",
-        "projectPath": "/home/runner/workspace/src/DicomPrintServer/DicomPrintServer.csproj",
-        "packagesPath": "/home/runner/.nuget/packages/",
-        "outputPath": "/home/runner/workspace/src/DicomPrintServer/obj/",
+        "projectPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
+        "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
+        "outputPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
-          "/home/runner/.nuget/NuGet/NuGet.Config"
+          "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0-windows"
@@ -32,11 +32,6 @@
           "warnAsError": [
             "NU1605"
           ]
-        },
-        "restoreAuditProperties": {
-          "enableAudit": "true",
-          "auditLevel": "low",
-          "auditMode": "direct"
         }
       },
       "frameworks": {
@@ -62,7 +57,7 @@
             "Microsoft.NET.ILLink.Tasks": {
               "suppressParent": "All",
               "target": "Package",
-              "version": "[8.0.22, )",
+              "version": "[8.0.0-rc.1.23419.4, )",
               "autoReferenced": true
             },
             "PdfSharpCore": {
@@ -112,15 +107,15 @@
           "downloadDependencies": [
             {
               "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
-              "version": "[8.0.22, 8.0.22]"
-            },
-            {
-              "name": "Microsoft.NETCore.App.Host.win-x64",
-              "version": "[8.0.22, 8.0.22]"
+              "version": "[8.0.0-rc.1.23421.29, 8.0.0-rc.1.23421.29]"
             },
             {
               "name": "Microsoft.NETCore.App.Runtime.win-x64",
-              "version": "[8.0.22, 8.0.22]"
+              "version": "[8.0.0-rc.1.23419.4, 8.0.0-rc.1.23419.4]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
+              "version": "[8.0.0-rc.1.23420.5, 8.0.0-rc.1.23420.5]"
             }
           ],
           "frameworkReferences": {
@@ -128,7 +123,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "/nix/store/1blv644vinali34masnw6g5fjjjaa4y6-dotnet-sdk-8.0.416/share/dotnet/sdk/8.0.416/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.100-rc.1.23463.5/PortableRuntimeIdentifierGraph.json"
         }
       },
       "runtimes": {

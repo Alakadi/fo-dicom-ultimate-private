@@ -11,33 +11,53 @@ namespace DicomPrintServer.Services
     /// الآليات:
     ///   1. تاريخ أول تشغيل → مخزَّن في Registry (Windows) أو ملف مخفي (Linux)
     ///   2. مُشفَّر بـ DPAPI (Windows) أو AES-GCM مرتكز على Machine ID (Linux)
-    ///   3. الحد: 14 يوماً أو 50 عملية طباعة
-    ///   4. عند الانتهاء: watermark على كل مخرجات + تحذير في Log
-    ///   5. وضع الإتلاف الذاتي (SelfDestruct): يحذف ملف التطبيق
+    ///   3. الحد الافتراضي: 14 يوماً أو 50 عملية (قابل للتخصيص من الترخيص)
+    ///   4. إذا ضُبط TrialHours في الترخيص: يُعدّ بالساعات لا الأيام
+    ///   5. حماية من تراجع الساعة (Clock Rollback): LastSeenTime
+    ///   6. عند الانتهاء: watermark على كل مخرجات + تحذير في Log
     ///
     /// الحالات:
-    ///   Active    = Trial نشط ضمن المهلة والحد
-    ///   Expired   = انتهت المهلة أو تجاوز الحد
-    ///   Tampered  = تم التلاعب بالبيانات
+    ///   Active   = Trial نشط ضمن المهلة والحد
+    ///   Expired  = انتهت المهلة أو تجاوز الحد
+    ///   Tampered = تم التلاعب بالبيانات أو الساعة
     /// </summary>
     public class TrialManager
     {
-        private const int    TrialDays       = 14;
-        private const int    MaxOperations   = 50;
-        private const string RegistryPath    = @"SOFTWARE\DicomPrintServer\Trial";
-        private const string RegistryKey     = "InitData";
-        private const string FallbackDir     = ".dpss";
-        private const string FallbackFile    = ".trial";
+        private const int    DefaultTrialDays   = 14;
+        private const int    DefaultMaxOps      = 50;
+        private const string RegistryPath       = @"SOFTWARE\DicomPrintServer\Trial";
+        private const string RegistryKey        = "InitData";
+        private const string FallbackDir        = ".dpss";
+        private const string FallbackFile       = ".trial";
 
         private readonly ILogger<TrialManager> _logger;
         private TrialData? _trialData;
 
-        public bool     IsTrialActive    => GetStatus() == TrialStatus.Active;
-        public bool     IsTrialExpired   => GetStatus() == TrialStatus.Expired;
-        public int      RemainingDays    => _trialData == null ? 0
-            : Math.Max(0, TrialDays - (int)(DateTime.UtcNow - _trialData.FirstRun).TotalDays);
-        public int      RemainingOps     => _trialData == null ? 0
-            : Math.Max(0, MaxOperations - _trialData.OperationCount);
+        // قيم ديناميكية من الترخيص (أو الافتراضية)
+        private int  _maxOperations = DefaultMaxOps;
+        private int? _trialHours    = null;     // null = يستخدم DefaultTrialDays
+
+        // ══════════════════════════════════════════════════════════════════════
+        // خصائص عامة
+        // ══════════════════════════════════════════════════════════════════════
+
+        public bool IsTrialActive  => GetStatus() == TrialStatus.Active;
+        public bool IsTrialExpired => GetStatus() != TrialStatus.Active;
+
+        public int RemainingDays => _trialData == null ? 0
+            : Math.Max(0, (int)(_trialData.FirstRun.AddDays(
+                _trialHours.HasValue ? _trialHours.Value / 24.0 : DefaultTrialDays)
+                - DateTime.UtcNow).TotalDays);
+
+        public int RemainingHours => _trialData == null ? 0
+            : Math.Max(0, (int)(_trialData.FirstRun.AddHours(
+                _trialHours ?? (DefaultTrialDays * 24))
+                - DateTime.UtcNow).TotalHours);
+
+        public int RemainingOps => _trialData == null ? 0
+            : Math.Max(0, _maxOperations - _trialData.OperationCount);
+
+        public bool IsHourBased => _trialHours.HasValue;
 
         public TrialManager(ILogger<TrialManager> logger)
         {
@@ -48,29 +68,44 @@ namespace DicomPrintServer.Services
         // الواجهة العامة
         // ══════════════════════════════════════════════════════════════════════
 
-        /// <summary>يُهيئ أو يقرأ بيانات التجربة.</summary>
-        public void Initialize()
+        /// <summary>
+        /// يُهيئ أو يقرأ بيانات التجربة.
+        /// إذا كان الترخيص Trial — يقرأ MaxOperations و TrialHours منه.
+        /// </summary>
+        public void Initialize(LicenseData? license = null)
         {
+            // قراءة الحدود من الترخيص أو الافتراضية
+            _maxOperations = license?.MaxOperations ?? DefaultMaxOps;
+            _trialHours    = license?.TrialHours;
+
             _trialData = LoadTrialData();
 
             if (_trialData == null)
             {
-                // أول تشغيل
                 _trialData = new TrialData
                 {
                     FirstRun       = DateTime.UtcNow,
                     OperationCount = 0,
-                    MachineId      = GetMachineId()
+                    MachineId      = GetMachineId(),
+                    LastSeenTime   = DateTime.UtcNow
                 };
                 SaveTrialData(_trialData);
-                _logger.LogInformation("Trial started — expires {Date} or after {Ops} operations",
-                    _trialData.FirstRun.AddDays(TrialDays).ToString("yyyy-MM-dd"), MaxOperations);
+
+                if (_trialHours.HasValue)
+                    _logger.LogInformation(
+                        "Trial started — expires after {Hours} hour(s) or {Ops} operations",
+                        _trialHours.Value, _maxOperations);
+                else
+                    _logger.LogInformation(
+                        "Trial started — expires {Date} or after {Ops} operations",
+                        _trialData.FirstRun.AddDays(DefaultTrialDays).ToString("yyyy-MM-dd"),
+                        _maxOperations);
             }
             else
             {
                 _logger.LogInformation(
-                    "Trial loaded — Remaining: {Days} day(s) / {Ops} operation(s)",
-                    RemainingDays, RemainingOps);
+                    "Trial loaded — Remaining: {Hrs} hr(s) / {Ops} operation(s)",
+                    RemainingHours, RemainingOps);
             }
         }
 
@@ -92,10 +127,11 @@ namespace DicomPrintServer.Services
             }
 
             _trialData!.OperationCount++;
+            _trialData.LastSeenTime = DateTime.UtcNow;
             SaveTrialData(_trialData);
 
-            _logger.LogDebug("Trial op #{Count} — {Days} days / {Ops} ops remaining",
-                _trialData.OperationCount, RemainingDays, RemainingOps);
+            _logger.LogDebug("Trial op #{Count} — {Hrs} hrs / {Ops} ops remaining",
+                _trialData.OperationCount, RemainingHours, RemainingOps);
             return true;
         }
 
@@ -104,36 +140,55 @@ namespace DicomPrintServer.Services
         {
             if (_trialData == null) return TrialStatus.Active;
 
-            // تحقق من Machine ID
+            // ── تحقق من Machine ID ─────────────────────────────────────────
             if (_trialData.MachineId != GetMachineId())
+            {
+                _logger.LogError("Trial: Machine ID mismatch — TAMPERED");
                 return TrialStatus.Tampered;
+            }
 
-            // تحقق من التاريخ
-            double daysPassed = (DateTime.UtcNow - _trialData.FirstRun).TotalDays;
-            if (daysPassed < 0 || daysPassed > TrialDays + 1)
-                return TrialStatus.Expired;
+            // ── تحقق من تراجع الساعة (Clock Rollback) ─────────────────────
+            // إذا كانت الساعة الحالية أصغر من آخر مرة شُغّل بأكثر من 5 دقائق → تلاعب
+            var tolerance = TimeSpan.FromMinutes(5);
+            if (DateTime.UtcNow < _trialData.LastSeenTime - tolerance)
+            {
+                _logger.LogError(
+                    "Trial: Clock rollback detected (now={Now}, lastSeen={Last}) — TAMPERED",
+                    DateTime.UtcNow, _trialData.LastSeenTime);
+                return TrialStatus.Tampered;
+            }
 
-            // تحقق من عدد العمليات
-            if (_trialData.OperationCount >= MaxOperations)
+            // ── تحقق من انتهاء الوقت ──────────────────────────────────────
+            DateTime expiresAt = _trialHours.HasValue
+                ? _trialData.FirstRun.AddHours(_trialHours.Value)
+                : _trialData.FirstRun.AddDays(DefaultTrialDays);
+
+            if (DateTime.UtcNow > expiresAt)
+            {
+                _logger.LogWarning("Trial: time limit reached (expired {Date})", expiresAt);
                 return TrialStatus.Expired;
+            }
+
+            // ── تحقق من عدد العمليات ──────────────────────────────────────
+            if (_trialData.OperationCount >= _maxOperations)
+            {
+                _logger.LogWarning("Trial: operation limit reached ({Count}/{Max})",
+                    _trialData.OperationCount, _maxOperations);
+                return TrialStatus.Expired;
+            }
 
             return TrialStatus.Active;
         }
 
-        /// <summary>
-        /// الإتلاف الذاتي (SelfDestruct) — يُستخدم في Trial builds فقط.
-        /// يحذف ملف التطبيق بعد وضع علامة التدمير.
-        /// </summary>
+        /// <summary>الإتلاف الذاتي عند انتهاء التجربة.</summary>
         public void SelfDestruct(bool deleteExecutable = false)
         {
             _logger.LogCritical("⚠️ TRIAL EXPIRED — SELF-DESTRUCT INITIATED");
 
-            // احذف بيانات التجربة
             try { DeleteTrialData(); } catch { }
 
             if (deleteExecutable)
             {
-                // نُدرج سكريبت يحذف الملفات بعد الخروج
                 var exe = Environment.ProcessPath ?? "";
                 if (!string.IsNullOrEmpty(exe) && File.Exists(exe))
                 {
@@ -190,10 +245,7 @@ namespace DicomPrintServer.Services
         {
             if (OperatingSystem.IsWindows())
             {
-                try
-                {
-                    Registry.CurrentUser.DeleteSubKey(RegistryPath, false);
-                }
+                try { Registry.CurrentUser.DeleteSubKey(RegistryPath, false); }
                 catch { }
             }
 
@@ -240,9 +292,7 @@ namespace DicomPrintServer.Services
         }
 
         private static void SaveToFile(string value)
-        {
-            File.WriteAllText(GetFallbackFilePath(), value);
-        }
+            => File.WriteAllText(GetFallbackFilePath(), value);
 
         // ──────────────────────────────────────────────────────────────────────
         // تشفير البيانات
@@ -272,9 +322,9 @@ namespace DicomPrintServer.Services
 
         private static byte[] AesGcmEncrypt(byte[] plaintext, byte[] keyMaterial)
         {
-            var key   = DeriveKey(keyMaterial);
-            var nonce = new byte[AesGcm.NonceByteSizes.MaxSize];
-            var tag   = new byte[AesGcm.TagByteSizes.MaxSize];
+            var key    = DeriveKey(keyMaterial);
+            var nonce  = new byte[AesGcm.NonceByteSizes.MaxSize];
+            var tag    = new byte[AesGcm.TagByteSizes.MaxSize];
             var cipher = new byte[plaintext.Length];
 
             RandomNumberGenerator.Fill(nonce);
@@ -306,7 +356,7 @@ namespace DicomPrintServer.Services
         private static byte[] DeriveKey(byte[] material)
         {
             using var sha = SHA256.Create();
-            return sha.ComputeHash(material);  // 256-bit key
+            return sha.ComputeHash(material);
         }
 
         // ──────────────────────────────────────────────────────────────────────
@@ -323,7 +373,6 @@ namespace DicomPrintServer.Services
                        + Environment.UserName
                        + Environment.UserDomainName;
 
-            // على Windows: نُضيف معرّف BIOS
             if (OperatingSystem.IsWindows())
             {
                 try
@@ -350,7 +399,6 @@ namespace DicomPrintServer.Services
 
         private static void ScheduleFileDeletion(string filePath)
         {
-            // يُنشئ batch script يحذف الملف بعد الخروج
             if (OperatingSystem.IsWindows())
             {
                 var bat = Path.GetTempFileName() + ".bat";
@@ -368,6 +416,11 @@ namespace DicomPrintServer.Services
                     UseShellExecute = false
                 });
             }
+            else
+            {
+                // Linux: حذف فوري للبيانات (الملف التنفيذي محمي عادةً)
+                try { File.Delete(GetFallbackFilePath()); } catch { }
+            }
         }
     }
 
@@ -380,6 +433,8 @@ namespace DicomPrintServer.Services
         public DateTime FirstRun        { get; set; }
         public int      OperationCount  { get; set; }
         public string   MachineId       { get; set; } = "";
+        /// <summary>آخر وقت تشغيل — للكشف عن تراجع الساعة.</summary>
+        public DateTime LastSeenTime    { get; set; } = DateTime.UtcNow;
     }
 
     public enum TrialStatus
