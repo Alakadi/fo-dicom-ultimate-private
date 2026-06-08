@@ -1,0 +1,109 @@
+namespace DicomPrintServer.Configuration
+{
+    public class PrintServerConfig
+    {
+        public List<ListenerConfig>  Listeners          { get; set; } = new();
+        public string                CenterName         { get; set; } = "DICOM Print Server";
+        public string                CenterLogoPath     { get; set; } = "";
+        public string                DefaultOutputFolder{ get; set; } = "PrintOutput";
+        public AdminApiConfig        AdminApi           { get; set; } = new();
+        public WhatsAppServerConfig? WhatsApp           { get; set; }
+    }
+
+    public class ListenerConfig
+    {
+        public int    Port                       { get; set; } = 8000;
+        public string AET                        { get; set; } = "PRINTSCP";
+        public string WindowsPrinterName         { get; set; } = "";
+        public bool   PrintToWindowsPrinter      { get; set; } = true;
+        public bool   SaveJpg                    { get; set; } = true;
+        public int    JpgQuality                 { get; set; } = 95;
+        public bool   SavePdf                    { get; set; } = false;
+        public string OutputFolder               { get; set; } = "";
+        public int    FilmResolutionDpi          { get; set; } = 150;
+
+        public ImageProcessingConfig ImageProcessing { get; set; } = new();
+        public AnnotationConfig      Annotations     { get; set; } = new();
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // M2-B: معالجة الصورة (Gamma / Contrast / Window-Level)
+    // ─────────────────────────────────────────────────────────────
+    public class ImageProcessingConfig
+    {
+        /// <summary>Gamma correction (1.0 = لا تغيير، >1 = أغمق، <1 = أفتح)</summary>
+        public float Gamma          { get; set; } = 1.0f;
+
+        /// <summary>Contrast multiplier (1.0 = لا تغيير)</summary>
+        public float Contrast       { get; set; } = 1.0f;
+
+        /// <summary>Brightness offset (-1..+1، 0 = لا تغيير)</summary>
+        public float Brightness     { get; set; } = 0f;
+
+        /// <summary>Gaussian sharpening radius (0 = معطّل)</summary>
+        public float Sharpness      { get; set; } = 0f;
+
+        /// <summary>قلب الصورة (MONOCHROME1)</summary>
+        public bool  Invert         { get; set; } = false;
+
+        /// <summary>Window Width لتطبيق Window/Level (0 = معطّل)</summary>
+        public double WindowWidth   { get; set; } = 0;
+
+        /// <summary>Window Center لتطبيق Window/Level</summary>
+        public double WindowCenter  { get; set; } = 128;
+
+        // M2-D: وضع المعايرة
+        /// <summary>تفعيل وضع المعايرة (ينتج صورة اختبار بدلاً من الصورة الأصلية)</summary>
+        public bool   CalibrationMode    { get; set; } = false;
+        public string CalibrationPattern { get; set; } = "TG18QC"; // TG18QC|GreyRamp|SMPTE|CheckerBoard|CrossHatch
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // M2-C: التعليقات التوضيحية (Header / Footer / Watermark)
+    // ─────────────────────────────────────────────────────────────
+    public class AnnotationConfig
+    {
+        // Header
+        public bool   ShowHeader       { get; set; } = false;
+        /// <summary>قالب يدعم: {PatientName} {PatientID} {StudyDate} {Modality} {AET} {Institution} {PrintDate}</summary>
+        public string HeaderTemplate   { get; set; } = "{Institution} | {PatientName} | {StudyDate}";
+
+        // Footer
+        public bool   ShowFooter       { get; set; } = false;
+        /// <summary>قالب يدعم نفس المتغيرات + {PageNum} {PageCount}</summary>
+        public string FooterTemplate   { get; set; } = "{Modality} | {PrintDate} | {AET}";
+
+        // Watermark
+        public bool   ShowWatermark    { get; set; } = false;
+        public string WatermarkText    { get; set; } = "TRIAL — NOT FOR CLINICAL USE";
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // M7: WhatsApp Notifications
+    // ─────────────────────────────────────────────────────────────
+    public class WhatsAppServerConfig
+    {
+        public bool   Enabled                 { get; set; } = false;
+        public string Provider                { get; set; } = "CallMeBot";
+        public string ApiKey                  { get; set; } = "";
+        public string? AccountSid             { get; set; }
+        public string? AuthToken              { get; set; }
+        public string? FromNumber             { get; set; }
+        public string? PhoneNumberId          { get; set; }
+        public string MessageTemplate         { get; set; } =
+            "✅ طباعة مكتملة\nالمريض: {PatientName}\nالصفحات: {PageCount}\n{DateTime}";
+        public bool   SendImage               { get; set; } = true;
+        public string? DefaultRecipientPhone  { get; set; }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Admin REST API
+    // ─────────────────────────────────────────────────────────────
+    public class AdminApiConfig
+    {
+        public bool   Enabled           { get; set; } = true;
+        public int    Port              { get; set; } = 9000;
+        public string AdminUsername     { get; set; } = "admin";
+        public string AdminPasswordHash { get; set; } = "";
+    }
+}

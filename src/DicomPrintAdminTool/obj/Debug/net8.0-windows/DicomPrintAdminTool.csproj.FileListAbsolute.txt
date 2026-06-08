@@ -1,0 +1,15 @@
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/DicomPrintAdminTool.GeneratedMSBuildEditorConfig.editorconfig
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/DicomPrintAdminTool.AssemblyInfoInputs.cache
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/DicomPrintAdminTool.AssemblyInfo.cs
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/DicomPrintAdminTool.csproj.CoreCompileInputs.cache
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/DicomPrintAdminTool.sourcelink.json
+/home/runner/workspace/src/DicomPrintAdminTool/bin/Debug/net8.0-windows/DicomPrintAdminTool
+/home/runner/workspace/src/DicomPrintAdminTool/bin/Debug/net8.0-windows/DicomPrintAdminTool.deps.json
+/home/runner/workspace/src/DicomPrintAdminTool/bin/Debug/net8.0-windows/DicomPrintAdminTool.runtimeconfig.json
+/home/runner/workspace/src/DicomPrintAdminTool/bin/Debug/net8.0-windows/DicomPrintAdminTool.dll
+/home/runner/workspace/src/DicomPrintAdminTool/bin/Debug/net8.0-windows/DicomPrintAdminTool.pdb
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/DicomPrintAdminTool.dll
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/refint/DicomPrintAdminTool.dll
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/DicomPrintAdminTool.pdb
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/DicomPrintAdminTool.genruntimeconfig.cache
+/home/runner/workspace/src/DicomPrintAdminTool/obj/Debug/net8.0-windows/ref/DicomPrintAdminTool.dll
