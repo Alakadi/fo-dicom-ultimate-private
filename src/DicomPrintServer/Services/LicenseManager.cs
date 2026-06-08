@@ -10,16 +10,14 @@ namespace DicomPrintServer.Services
     ///
     /// بنية ملف الترخيص (JSON مُوقَّع):
     /// {
-    ///   "CustomerId":     "HOSP-001",
-    ///   "CustomerName":   "مستشفى الملك فهد",
-    ///   "LicenseType":    "Full" | "Trial",
-    ///   "IssuedAt":       "2024-01-01T00:00:00Z",
-    ///   "ExpiresAt":      "2025-01-01T00:00:00Z",    // null = دائم
-    ///   "MaxPorts":       4,
-    ///   "MaxOperations":  500,                        // null = غير محدود
-    ///   "TrialHours":     2,                          // null = يستخدم TrialDays
-    ///   "Features":       ["JPG","PDF","WhatsApp"],
-    ///   "Signature":      "<base64 RSA signature>"
+    ///   "CustomerId":    "HOSP-001",
+    ///   "CustomerName":  "مستشفى الملك فهد",
+    ///   "LicenseType":   "Full" | "Trial",
+    ///   "IssuedAt":      "2024-01-01T00:00:00Z",
+    ///   "ExpiresAt":     "2025-01-01T00:00:00Z",    // null = دائم
+    ///   "MaxPorts":      4,
+    ///   "Features":      ["JPG","PDF","WhatsApp"],
+    ///   "Signature":     "<base64 RSA signature>"
     /// }
     ///
     /// التحقق:
@@ -29,7 +27,6 @@ namespace DicomPrintServer.Services
     ///   - يتحقق من تاريخ الانتهاء وعدد المنافذ
     ///
     /// الـ Private Key موجود فقط في أداة المسؤول (AdminTool).
-    /// MaxOperations + TrialHours مُضمَّنة في التوقيع — لا يمكن تغييرها.
     /// </summary>
     public class LicenseManager
     {
@@ -37,13 +34,13 @@ namespace DicomPrintServer.Services
         // يُستبدل بالمفتاح الحقيقي عند البناء النهائي
         private const string PublicKeyPem = """
             -----BEGIN PUBLIC KEY-----
-            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3lbVhlKmdhsuWk9b0I8b
-            XFLL+yzr47BjcsiVBP3neeAJ/v2ykx4rWN/N+vhU+I4EK0VvmAzHhRbJTtVy2q+8
-            UCgrFpPLCL8FgPA1NqZtgsH/GdQRe6H97FZVhWyjeguVWwH/1oi8/6dl2mQeOlsN
-            7arDJxVKIIjXoeWGPZJ5znH1JBRce6k8mYWzTa7TZpQjMJ4jHyXQWSGrHOMCm1r1
-            6WY5+MOOuHYBj8OKneTJKXTqm9wzzxRCrLIE3Kxtga+FHiTLM7kHsYdFgT8jaD84
-            2Mgfd4vDpadKb8AkscE0dlkx4uMlEbuz2VLoaYx7LonjNik50QUTibY/ipQUwDrv
-            rQIDAQAB
+            MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuIS/2NS/vwTrmazOxXPQ
+            HyqJQc4vBmVIOOIbmC8yyY3LasW8Tfk2p3yHhGSBRcFgoe3uzLAAzARDt8aWb6sg
+            /VLE9yh7U2MYqAIGmcbocpW9aiPeCJ+TfN+6VIhSyT/ymrz56aRn8HIbH80OOhe3
+            90ePy25YuXGHgfFEBuvSZ3ZITmW6itnkgBuZ9WYwv5LkMGIS+PRngdIIcmU8pTxv
+            fXPGoJb9UY6zgNQcTABBPBY3liJNv1ob7NsvWbfCLWP5xOLkkZkdo3OiLOWdilF8
+            0VW0qDtF76J8D0ydJDU+5ewIDO6Xi8LlPhAIYBquSJZndA4PAy4fodtsoBI3+1Ie
+            aQIDAQAB
             -----END PUBLIC KEY-----
             """;
 
@@ -51,10 +48,10 @@ namespace DicomPrintServer.Services
         private LicenseData? _activeLicense;
         private LicenseStatus _status = LicenseStatus.NotLoaded;
 
-        public LicenseStatus Status  => _status;
-        public LicenseData?  License => _activeLicense;
+        public LicenseStatus Status   => _status;
+        public LicenseData?  License  => _activeLicense;
 
-        public bool IsLicensed  => _status == LicenseStatus.Valid;
+        public bool IsLicensed => _status == LicenseStatus.Valid;
         public bool IsTrialMode => _status == LicenseStatus.Trial
                                    || _activeLicense?.LicenseType == "Trial";
 
@@ -67,6 +64,13 @@ namespace DicomPrintServer.Services
         // تحميل الترخيص
         // ══════════════════════════════════════════════════════════════════════
 
+        /// <summary>
+        /// يحمّل ويتحقق من ملف الترخيص.
+        /// المسارات بالأولوية:
+        ///   1. المتغير البيئي DICOM_LICENSE_FILE
+        ///   2. license.key بجانب ملف التطبيق
+        ///   3. %ProgramData%\DicomPrintServer\license.key
+        /// </summary>
         public LicenseStatus LoadLicense(string? overridePath = null)
         {
             var paths = new[]
@@ -86,17 +90,14 @@ namespace DicomPrintServer.Services
                 _logger.LogInformation("Loading license from: {Path}", path);
                 try
                 {
-                    var json   = File.ReadAllText(path!, Encoding.UTF8);
-                    var result = VerifyAndLoad(json);
+                    var json    = File.ReadAllText(path!, Encoding.UTF8);
+                    var result  = VerifyAndLoad(json);
                     if (result != LicenseStatus.Invalid)
                     {
-                        _logger.LogInformation(
-                            "License OK — {Type} | Customer={Name} | Expires={Exp} | MaxOps={Ops} | TrialHours={Hours}",
+                        _logger.LogInformation("License OK — {Type} | Customer={Name} | Expires={Exp}",
                             _activeLicense!.LicenseType,
                             _activeLicense.CustomerName,
-                            _activeLicense.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never",
-                            _activeLicense.MaxOperations?.ToString() ?? "Unlimited",
-                            _activeLicense.TrialHours?.ToString() ?? "N/A");
+                            _activeLicense.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never");
                         return result;
                     }
                 }
@@ -111,6 +112,7 @@ namespace DicomPrintServer.Services
             return _status;
         }
 
+        /// <summary>يتحقق من نص JSON للترخيص (بدون قراءة ملف).</summary>
         public LicenseStatus VerifyAndLoad(string licenseJson)
         {
             try
@@ -118,6 +120,7 @@ namespace DicomPrintServer.Services
                 var doc  = JsonDocument.Parse(licenseJson);
                 var root = doc.RootElement;
 
+                // استخرج التوقيع
                 if (!root.TryGetProperty("Signature", out var sigElement))
                 {
                     _logger.LogError("License missing Signature field");
@@ -127,6 +130,7 @@ namespace DicomPrintServer.Services
 
                 byte[] signature = Convert.FromBase64String(sigElement.GetString() ?? "");
 
+                // أعد بناء JSON بدون Signature للتحقق
                 var payloadDict = new Dictionary<string, JsonElement>();
                 foreach (var prop in root.EnumerateObject())
                 {
@@ -136,6 +140,7 @@ namespace DicomPrintServer.Services
                 string payloadJson = JsonSerializer.Serialize(payloadDict,
                     new JsonSerializerOptions { WriteIndented = false });
 
+                // تحقق من التوقيع
                 if (!VerifySignature(payloadJson, signature))
                 {
                     _logger.LogError("License signature verification failed — tampered or invalid key");
@@ -143,6 +148,7 @@ namespace DicomPrintServer.Services
                     return _status;
                 }
 
+                // فكّ الترخيص
                 var data = JsonSerializer.Deserialize<LicenseData>(licenseJson,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
@@ -152,6 +158,7 @@ namespace DicomPrintServer.Services
                     return _status;
                 }
 
+                // تحقق من تاريخ الانتهاء
                 if (data.ExpiresAt.HasValue && data.ExpiresAt.Value < DateTime.UtcNow)
                 {
                     _logger.LogError("License expired on {Date}", data.ExpiresAt.Value);
@@ -175,45 +182,32 @@ namespace DicomPrintServer.Services
             }
         }
 
-        // ══════════════════════════════════════════════════════════════════════
-        // فحوصات الحدود
-        // ══════════════════════════════════════════════════════════════════════
-
+        /// <summary>يتحقق مما إذا كانت ميزة معينة مُرخَّصة.</summary>
         public bool HasFeature(string feature)
         {
             if (_activeLicense == null) return false;
-            if (_activeLicense.Features == null) return true;
+            if (_activeLicense.Features == null) return true;  // All features if no list
             return _activeLicense.Features.Contains(feature, StringComparer.OrdinalIgnoreCase);
         }
 
+        /// <summary>يتحقق من عدد المنافذ المسموح بها.</summary>
         public bool IsPortCountAllowed(int portCount)
         {
-            if (_activeLicense == null) return portCount <= 1;
+            // في وضع Trial: لا قيود على عدد المنافذ —
+            // القيود الحقيقية هي عدد العمليات والوقت (TrialManager).
+            if (_activeLicense == null) return true;
+            if (_activeLicense.MaxPorts <= 0) return true;  // 0 أو سالب = غير محدود
             return portCount <= _activeLicense.MaxPorts;
         }
-
-        /// <summary>
-        /// يتحقق مما إذا وصلت عمليات الطباعة للحد المرخّص.
-        /// يُعيد false إذا كان الحد غير محدود (null).
-        /// MaxOperations مُضمَّن في التوقيع RSA — لا يمكن تزويره.
-        /// </summary>
-        public bool HasReachedOperationLimit(long currentSuccessCount)
-        {
-            var maxOps = _activeLicense?.MaxOperations;
-            if (maxOps == null || maxOps <= 0) return false;
-            return currentSuccessCount >= maxOps.Value;
-        }
-
-        /// <summary>يُعيد الحد الأقصى للعمليات من الترخيص (null = غير محدود).</summary>
-        public int? GetLicensedMaxOperations() => _activeLicense?.MaxOperations;
-
-        /// <summary>يُعيد مدة التجربة بالساعات من الترخيص (null = يستخدم TrialDays).</summary>
-        public int? GetLicensedTrialHours() => _activeLicense?.TrialHours;
 
         // ══════════════════════════════════════════════════════════════════════
         // توليد زوج مفاتيح (للـ AdminTool فقط)
         // ══════════════════════════════════════════════════════════════════════
 
+        /// <summary>
+        /// يولّد زوج مفاتيح RSA جديد ويُعيد (privateKeyPem, publicKeyPem).
+        /// يُستخدم فقط في AdminTool عند الإعداد الأوّلي.
+        /// </summary>
         public static (string PrivatePem, string PublicPem) GenerateKeyPair()
         {
             using var rsa    = RSA.Create(2048);
@@ -222,12 +216,15 @@ namespace DicomPrintServer.Services
             return (privatePem, publicPem);
         }
 
-        /// <summary>يُنشئ ترخيصاً موقَّعاً — يُستخدم في AdminTool.</summary>
+        /// <summary>
+        /// يُنشئ ترخيصاً موقّعاً — يُستخدم في AdminTool.
+        /// </summary>
         public static string CreateSignedLicense(LicenseData data, string privateKeyPem)
         {
             using var rsa = RSA.Create();
             rsa.ImportFromPem(privateKeyPem);
 
+            // JSON بدون Signature
             var payloadDict = new Dictionary<string, object?>
             {
                 ["CustomerId"]    = data.CustomerId,
@@ -236,8 +233,6 @@ namespace DicomPrintServer.Services
                 ["IssuedAt"]      = data.IssuedAt.ToString("o"),
                 ["ExpiresAt"]     = data.ExpiresAt?.ToString("o"),
                 ["MaxPorts"]      = data.MaxPorts,
-                ["MaxOperations"] = data.MaxOperations,
-                ["TrialHours"]    = data.TrialHours,
                 ["Features"]      = data.Features
             };
 
@@ -248,6 +243,7 @@ namespace DicomPrintServer.Services
             byte[] signature    = rsa.SignData(payloadBytes,
                 HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
 
+            // أضف Signature للنهائي
             payloadDict["Signature"] = Convert.ToBase64String(signature);
             return JsonSerializer.Serialize(payloadDict,
                 new JsonSerializerOptions { WriteIndented = true });
@@ -281,18 +277,14 @@ namespace DicomPrintServer.Services
 
     public class LicenseData
     {
-        public string        CustomerId    { get; set; } = "";
-        public string        CustomerName  { get; set; } = "";
-        public string        LicenseType   { get; set; } = "Trial";
-        public DateTime      IssuedAt      { get; set; } = DateTime.UtcNow;
-        public DateTime?     ExpiresAt     { get; set; }
-        public int           MaxPorts      { get; set; } = 1;
-        /// <summary>الحد الأقصى لعمليات الطباعة (null = غير محدود). مُضمَّن في توقيع RSA.</summary>
-        public int?          MaxOperations { get; set; }
-        /// <summary>مدة التجربة بالساعات (null = يستخدم TrialDays). مُضمَّن في توقيع RSA.</summary>
-        public int?          TrialHours    { get; set; }
-        public List<string>? Features      { get; set; }
-        public string?       Signature     { get; set; }
+        public string   CustomerId   { get; set; } = "";
+        public string   CustomerName { get; set; } = "";
+        public string   LicenseType  { get; set; } = "Trial";   // "Trial" | "Full"
+        public DateTime IssuedAt     { get; set; } = DateTime.UtcNow;
+        public DateTime? ExpiresAt   { get; set; }
+        public int      MaxPorts     { get; set; } = 1;
+        public List<string>? Features { get; set; }             // null = all
+        public string?  Signature    { get; set; }
     }
 
     public enum LicenseStatus

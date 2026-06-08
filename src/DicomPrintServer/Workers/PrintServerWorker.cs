@@ -9,31 +9,28 @@ namespace DicomPrintServer.Workers
     /// <summary>
     /// BackgroundService الرئيسي:
     ///   1. يُشغّل فحوصات الأمان (SecurityGuard)
-    ///   2. يُحمّل الترخيص (LicenseManager) — مع MaxOperations و TrialHours
-    ///   3. يُهيئ التجربة (TrialManager.Initialize) بمعطيات الترخيص
-    ///   4. يُحمّل العداد الدائم (PrintMonitor.LoadPersistentCounter)
-    ///   5. يتحقق من حد المنافذ المرخّصة
-    ///   6. يُشغّل جميع منافذ DICOM عبر MultiPortManager
-    ///   7. يُشغّل تقرير دوري (كل ساعة) عبر PrintMonitor
+    ///   2. يُحمّل الترخيص (LicenseManager) أو يبدأ التجربة (TrialManager)
+    ///   3. يُشغّل جميع منافذ DICOM عبر MultiPortManager
+    ///   4. يُشغّل تقرير دوري عبر PrintMonitor
     /// </summary>
     public class PrintServerWorker : BackgroundService
     {
-        private readonly MultiPortManager              _portManager;
-        private readonly LicenseManager               _licenseManager;
-        private readonly TrialManager                  _trialManager;
-        private readonly SecurityGuard                 _securityGuard;
-        private readonly PrintMonitor                  _monitor;
-        private readonly PrintServerConfig             _config;
-        private readonly ILogger<PrintServerWorker>    _logger;
+        private readonly MultiPortManager    _portManager;
+        private readonly LicenseManager      _licenseManager;
+        private readonly TrialManager        _trialManager;
+        private readonly SecurityGuard        _securityGuard;
+        private readonly PrintMonitor         _monitor;
+        private readonly PrintServerConfig    _config;
+        private readonly ILogger<PrintServerWorker> _logger;
 
         public PrintServerWorker(
-            MultiPortManager            portManager,
-            LicenseManager              licenseManager,
-            TrialManager                trialManager,
-            SecurityGuard               securityGuard,
-            PrintMonitor                monitor,
-            IOptions<PrintServerConfig> config,
-            ILogger<PrintServerWorker>  logger)
+            MultiPortManager              portManager,
+            LicenseManager                licenseManager,
+            TrialManager                  trialManager,
+            SecurityGuard                 securityGuard,
+            PrintMonitor                  monitor,
+            IOptions<PrintServerConfig>   config,
+            ILogger<PrintServerWorker>    logger)
         {
             _portManager    = portManager;
             _licenseManager = licenseManager;
@@ -46,49 +43,37 @@ namespace DicomPrintServer.Workers
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("═══════════════════════════════════════════════");
-            _logger.LogInformation("  DICOM Print Server v2.0 — Starting");
-            _logger.LogInformation("═══════════════════════════════════════════════");
+            _logger.LogInformation("═══════════════════════════════════════════");
+            _logger.LogInformation("  DICOM Print Server v1.0 — Starting");
+            _logger.LogInformation("═══════════════════════════════════════════");
 
-            // ── فحوصات الأمان ──────────────────────────────────────────────
+            // ── فحوصات الأمان ────────────────────────────────────────────
             if (!_securityGuard.RunStartupChecks())
             {
                 _logger.LogCritical("Security check failed — server will not start");
                 return;
             }
 
-            // ── تحميل الترخيص ──────────────────────────────────────────────
+            // ── تحميل الترخيص ────────────────────────────────────────────
             var licenseStatus = _licenseManager.LoadLicense();
 
             switch (licenseStatus)
             {
                 case LicenseStatus.Valid:
-                    _logger.LogInformation(
-                        "✅ License: FULL — Customer={Name} | MaxOps={Ops} | Expires={Exp}",
-                        _licenseManager.License?.CustomerName,
-                        _licenseManager.License?.MaxOperations?.ToString() ?? "Unlimited",
-                        _licenseManager.License?.ExpiresAt?.ToString("yyyy-MM-dd") ?? "Never");
+                    _logger.LogInformation("✅ License: FULL — Customer: {Name}",
+                        _licenseManager.License?.CustomerName);
                     break;
 
                 case LicenseStatus.Trial:
-                    // تمرير بيانات الترخيص لاستخدام MaxOperations/TrialHours الديناميكية
-                    _trialManager.Initialize(_licenseManager.License);
-
-                    if (_trialManager.IsTrialExpired)
+                    _trialManager.Initialize();
+                    if (_trialManager.GetStatus() != TrialStatus.Active)
                     {
-                        _logger.LogError("Trial period EXPIRED — server will not start");
-                        _trialManager.SelfDestruct(deleteExecutable: false);
+                        _trialManager.TriggerSilentDestruct();
                         return;
                     }
-
-                    if (_trialManager.IsHourBased)
-                        _logger.LogWarning(
-                            "⚠️  TRIAL MODE — {Hours} hour(s) / {Ops} operation(s) remaining",
-                            _trialManager.RemainingHours, _trialManager.RemainingOps);
-                    else
-                        _logger.LogWarning(
-                            "⚠️  TRIAL MODE — {Days} day(s) / {Ops} operation(s) remaining",
-                            _trialManager.RemainingDays, _trialManager.RemainingOps);
+                    _logger.LogWarning(
+                        "⚠️  TRIAL MODE — {Days} day(s) / {Ops} operation(s) remaining",
+                        _trialManager.RemainingDays, _trialManager.RemainingOps);
                     break;
 
                 case LicenseStatus.Expired:
@@ -97,25 +82,11 @@ namespace DicomPrintServer.Workers
                     return;
 
                 case LicenseStatus.Invalid:
-                    _logger.LogError("License INVALID — tampered or wrong public key");
+                    _logger.LogError("License INVALID — tampered or wrong key");
                     return;
             }
 
-            // ── تحميل عداد العمليات الدائم (للتحقق من MaxOperations) ───────
-            _monitor.LoadPersistentCounter();
-
-            // ── التحقق من حد MaxOperations عند بدء التشغيل ──────────────────
-            var maxOps = _licenseManager.GetLicensedMaxOperations();
-            if (maxOps.HasValue && _monitor.HasExceededLimit(maxOps.Value))
-            {
-                _logger.LogError(
-                    "License MaxOperations limit already reached ({Count}/{Max}) — server will not start. " +
-                    "Contact your vendor to upgrade your license.",
-                    _monitor.GetTotalSuccessCount(), maxOps.Value);
-                return;
-            }
-
-            // ── التحقق من عدد المنافذ المرخّصة ──────────────────────────────
+            // ── التحقق من عدد المنافذ ─────────────────────────────────────
             if (!_licenseManager.IsPortCountAllowed(_config.Listeners.Count))
             {
                 _logger.LogError(
@@ -126,19 +97,14 @@ namespace DicomPrintServer.Workers
 
             try
             {
-                // ── بدء جميع المنافذ ─────────────────────────────────────────
+                // ── بدء المنافذ ───────────────────────────────────────────
                 await _portManager.StartAllAsync(stoppingToken);
 
                 _logger.LogInformation(
                     "═══ Server ready — {Count} active listener(s) ═══",
                     _portManager.ActiveListenerCount);
 
-                if (maxOps.HasValue)
-                    _logger.LogInformation(
-                        "Operation counter: {Done}/{Max} used",
-                        _monitor.GetTotalSuccessCount(), maxOps.Value);
-
-                // ── حلقة التقرير الدوري (كل ساعة) ────────────────────────────
+                // ── تقرير دوري (كل ساعة) ─────────────────────────────────
                 using var reportTimer = new PeriodicTimer(TimeSpan.FromHours(1));
                 while (!stoppingToken.IsCancellationRequested)
                 {
@@ -155,16 +121,7 @@ namespace DicomPrintServer.Workers
                         break;
                     }
 
-                    // فحص حد العمليات أثناء التشغيل
-                    if (maxOps.HasValue && _monitor.HasExceededLimit(maxOps.Value))
-                    {
-                        _logger.LogError(
-                            "MaxOperations limit reached ({Count}/{Max}) — shutting down",
-                            _monitor.GetTotalSuccessCount(), maxOps.Value);
-                        break;
-                    }
-
-                    // ملخص في اللوج
+                    // طباعة ملخص في اللوج
                     var g = _monitor.GetGlobalStats();
                     _logger.LogInformation(
                         "[Hourly] Jobs: recv={R} ok={OK} fail={F} | Pages: ok={PO} fail={PF}",
@@ -199,9 +156,10 @@ namespace DicomPrintServer.Workers
             {
                 await _portManager.StopAllAsync();
 
+                // تقرير نهائي عند الإيقاف
                 var g = _monitor.GetGlobalStats();
                 _logger.LogInformation(
-                    "═══ DICOM Print Server stopped ═══ | Uptime: {Up} | Jobs: recv={R} ok={OK} fail={F}",
+                    "═══ DICOM Print Server stopped ═══ | Uptime: {Up} | Jobs: {J} OK={OK} Fail={F}",
                     TimeSpan.FromSeconds(g.UptimeSeconds), g.TotalReceived, g.TotalSuccess, g.TotalFailed);
             }
         }

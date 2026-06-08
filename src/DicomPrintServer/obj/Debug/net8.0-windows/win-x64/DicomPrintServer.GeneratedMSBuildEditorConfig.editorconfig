@@ -12,6 +12,6 @@ build_property.PlatformNeutralAssembly =
 build_property.EnforceExtendedAnalyzerRules = 
 build_property._SupportedPlatformList = Linux,macOS,Windows
 build_property.RootNamespace = DicomPrintServer
-build_property.ProjectDir = /home/runner/workspace/src/DicomPrintServer/
+build_property.ProjectDir = D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\
 build_property.EnableComHosting = 
 build_property.EnableGeneratedComInterfaceComImportInterop = 

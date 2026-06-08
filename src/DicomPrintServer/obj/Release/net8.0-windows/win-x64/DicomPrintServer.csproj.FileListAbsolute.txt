@@ -246,3 +246,8 @@ D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Release\net8.0-win
 D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Release\net8.0-windows\win-x64\DicomPrintServer.pdb
 D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Release\net8.0-windows\win-x64\DicomPrintServer.genruntimeconfig.cache
 D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Release\net8.0-windows\win-x64\ref\DicomPrintServer.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Release\net8.0-windows\win-x64\Microsoft.Data.Sqlite.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Release\net8.0-windows\win-x64\SQLitePCLRaw.batteries_v2.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Release\net8.0-windows\win-x64\SQLitePCLRaw.core.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Release\net8.0-windows\win-x64\SQLitePCLRaw.provider.e_sqlite3.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Release\net8.0-windows\win-x64\e_sqlite3.dll

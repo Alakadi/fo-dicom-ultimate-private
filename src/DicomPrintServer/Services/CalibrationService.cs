@@ -96,135 +96,6 @@ namespace DicomPrintServer.Services
         }
 
         // ────────────────────────────────────────────────────────────────────
-        // M2-D+: معايرة متعددة المتغيرات (Multi-Variant Calibration)
-        // ────────────────────────────────────────────────────────────────────
-
-        /// <summary>
-        /// يُنشئ صورة معايرة متعددة المتغيرات — شبكة لوحات (panels)، كل لوحة
-        /// تعرض نمط المعايرة الأساسي بإعدادات Gamma / Contrast / Brightness مختلفة.
-        ///
-        /// التخطيط التلقائي:
-        ///   1 متغير  → 1×1
-        ///   2 متغيرات → 2×1
-        ///   3–4      → 2×2
-        ///   5–6      → 3×2
-        ///   7+       → √N × √N (تقريباً)
-        /// </summary>
-        public Image<Bgra32> GenerateMultiVariantImage(
-            IList<Configuration.CalibrationVariant> variants,
-            int width       = 1200,
-            int height      = 900,
-            CalibrationPatternType basePattern = CalibrationPatternType.GreyRamp)
-        {
-            if (variants == null || variants.Count == 0)
-            {
-                _logger.LogWarning("No CalibrationVariants specified — generating single pattern");
-                return Generate(basePattern, width, height);
-            }
-
-            int count  = variants.Count;
-            int cols   = count <= 1 ? 1
-                       : count <= 2 ? 2
-                       : count <= 4 ? 2
-                       : count <= 6 ? 3
-                       : (int)Math.Ceiling(Math.Sqrt(count));
-            int rows   = (int)Math.Ceiling((double)count / cols);
-            int cellW  = Math.Max(1, width  / cols);
-            int cellH  = Math.Max(1, height / rows);
-            int labelH = 28;
-            int pad    = 3;
-
-            _logger.LogInformation(
-                "Generating multi-variant calibration: {N} panels — {Cols}×{Rows} grid ({Pattern})",
-                count, cols, rows, basePattern);
-
-            // لوحة قماشية كبيرة بخلفية داكنة
-            var canvas = new Image<Bgra32>(width, height, new Bgra32(18, 18, 18, 255));
-
-            // توليد النمط الأساسي بحجم خلية واحدة (بدون label)
-            int panelW = Math.Max(1, cellW - pad * 2);
-            int panelH = Math.Max(1, cellH - pad * 2 - labelH);
-            using var baseImg = Generate(basePattern, panelW, panelH);
-
-            canvas.Mutate(ctx =>
-            {
-                for (int i = 0; i < count; i++)
-                {
-                    int col = i % cols;
-                    int row = i / cols;
-                    int x   = col * cellW;
-                    int y   = row * cellH;
-
-                    var variant = variants[i];
-
-                    // استنساخ النمط الأساسي وتطبيق معالجة المتغير
-                    using var panel = baseImg.Clone();
-                    var procCfg = new Configuration.ImageProcessingConfig
-                    {
-                        Gamma      = variant.Gamma,
-                        Contrast   = variant.Contrast,
-                        Brightness = variant.Brightness
-                    };
-                    ImageProcessor.Process(panel, procCfg);
-
-                    // رسم اللوحة
-                    ctx.DrawImage(panel, new Point(x + pad, y + pad), 1f);
-
-                    // إطار خارجي للخلية
-                    ctx.Draw(new Color(new Bgra32(80, 80, 80, 255)), 1f,
-                        new RectangleF(x + 1, y + 1, cellW - 2, cellH - 2));
-
-                    // خلفية التسمية (أسفل اللوحة)
-                    float lblY = y + cellH - labelH - 1;
-                    ctx.Fill(new Color(new Bgra32(0, 0, 0, 220)),
-                        new RectangleF(x + pad, lblY, cellW - pad * 2, labelH));
-
-                    // نص التسمية
-                    string label = !string.IsNullOrEmpty(variant.Label)
-                        ? variant.Label
-                        : $"γ={variant.Gamma:F2}  C={variant.Contrast:F2}  B={variant.Brightness:+0.##;-0.##;0}";
-
-                    var textOpts = new RichTextOptions(_labelFont)
-                    {
-                        Origin              = new PointF(x + cellW / 2f, lblY + labelH / 2f),
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment   = VerticalAlignment.Center
-                    };
-                    ctx.DrawText(textOpts, label, Color.Yellow);
-                }
-
-                // عنوان عام في الأسفل
-                DrawCenteredTitle(ctx,
-                    $"Multi-Variant Calibration — {basePattern} — {count} variants",
-                    width, height);
-            });
-
-            return canvas;
-        }
-
-        /// <summary>يُنشئ صورة المعايرة متعددة المتغيرات ويحفظها كـ JPG.</summary>
-        public string SaveMultiVariantImage(
-            IList<Configuration.CalibrationVariant> variants,
-            string outputFolder,
-            int width   = 1200,
-            int height  = 900,
-            int quality = 95,
-            CalibrationPatternType basePattern = CalibrationPatternType.GreyRamp)
-        {
-            Directory.CreateDirectory(outputFolder);
-            var ts   = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            var path = Path.Combine(outputFolder, $"Calibration_MultiVariant_{ts}.jpg");
-
-            using var img = GenerateMultiVariantImage(variants, width, height, basePattern);
-            using var stream = File.OpenWrite(path);
-            img.SaveAsJpeg(stream,
-                new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = quality });
-
-            _logger.LogInformation("Multi-variant calibration image saved: {Path}", path);
-            return path;
-        }
-
-        // ────────────────────────────────────────────────────────────────────
         // TG18-QC: 18 حقل رمادي
         // ────────────────────────────────────────────────────────────────────
 
@@ -436,5 +307,173 @@ namespace DicomPrintServer.Services
         SMPTE,
         CheckerBoard,
         CrossHatch
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // M2-D (إضافة): شبكة معايرة NxM — نفس الصورة بقيم جاما مختلفة
+    // ════════════════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// ينشئ شبكة NxM من نفس صورة المريض مع قيم Gamma / Contrast مختلفة.
+    /// يُطبَع ورقة واحدة تحتوي على كل الاحتمالات بتسمية لكل خلية "γ=0.8 C=1.2".
+    ///
+    /// السيناريو: المطور أو الفني يُرسل هذه الورقة للطابعة للمعايرة المرئية،
+    /// ثم يختار الإعدادات الأفضل ويضعها في appsettings.json.
+    /// </summary>
+    public class CalibrationGridPrinter
+    {
+        private static readonly Font _labelFont;
+
+        static CalibrationGridPrinter()
+        {
+            var families = SystemFonts.Families.ToList();
+            FontFamily family = default;
+            bool found = false;
+            foreach (var f in families)
+            {
+                if (f.Name.Contains("Arial", StringComparison.OrdinalIgnoreCase))
+                { family = f; found = true; break; }
+            }
+            if (!found && families.Count > 0) family = families[0];
+            if (!found && families.Count == 0) family = SystemFonts.Get("Courier New");
+            _labelFont = family.CreateFont(11, FontStyle.Bold);
+        }
+
+        /// <summary>
+        /// ينشئ شبكة NxM من الصورة المُعطاة بقيم Gamma مختلفة.
+        /// </summary>
+        /// <param name="source">الصورة الأصلية (من DICOM)</param>
+        /// <param name="gammaValues">قيم Gamma للمحور الأفقي (افتراضياً: 0.7..1.3)</param>
+        /// <param name="contrastValues">قيم Contrast للمحور الرأسي (افتراضياً: 0.8..1.2)</param>
+        /// <param name="outputWidth">عرض الناتج بالبكسل</param>
+        /// <param name="outputHeight">ارتفاع الناتج بالبكسل</param>
+        public static Image<Bgra32> CreateGrid(
+            Image<Bgra32> source,
+            float[]? gammaValues    = null,
+            float[]? contrastValues = null,
+            int outputWidth  = 2480,
+            int outputHeight = 3508)
+        {
+            gammaValues    ??= new[] { 0.7f, 0.85f, 1.0f, 1.15f, 1.3f };
+            contrastValues ??= new[] { 0.8f, 1.0f, 1.2f };
+
+            int cols    = gammaValues.Length;
+            int rows    = contrastValues.Length;
+            int cellW   = outputWidth  / cols;
+            int cellH   = (outputHeight - 30) / rows;
+            int labelH  = 22;
+
+            var grid = new Image<Bgra32>(outputWidth, outputHeight, new Bgra32(30, 30, 30, 255));
+
+            for (int row = 0; row < rows; row++)
+            {
+                for (int col = 0; col < cols; col++)
+                {
+                    float gamma    = gammaValues[col];
+                    float contrast = contrastValues[row];
+
+                    // نسخ الصورة وتطبيق التعديلات
+                    using var cell = source.Clone(ctx =>
+                    {
+                        if (Math.Abs(contrast - 1f) > 0.001f)
+                            ctx.Contrast(contrast);
+                    });
+
+                    // Gamma يدوي
+                    ApplyGamma(cell, gamma);
+
+                    // تصغير لحجم الخلية (مطروحاً منها labelH)
+                    cell.Mutate(ctx => ctx.Resize(cellW - 4, cellH - labelH - 4));
+
+                    int x = col * cellW + 2;
+                    int y = row * cellH + labelH + 2;
+
+                    // رسم الخلية على الشبكة
+                    grid.Mutate(ctx =>
+                    {
+                        // خلفية التسمية
+                        ctx.Fill(SixLabors.ImageSharp.Color.Black,
+                            new RectangleF(col * cellW, row * cellH, cellW, labelH));
+
+                        // التسمية
+                        string label = $"γ={gamma:F2}  C={contrast:F2}";
+                        var textOpts = new RichTextOptions(_labelFont)
+                        {
+                            Origin              = new PointF(col * cellW + 4, row * cellH + 3),
+                            HorizontalAlignment = HorizontalAlignment.Left
+                        };
+                        ctx.DrawText(textOpts, label, SixLabors.ImageSharp.Color.Yellow);
+
+                        // إطار الخلية
+                        ctx.Draw(SixLabors.ImageSharp.Color.FromRgba(100, 100, 100, 255), 1f,
+                            new RectangleF(col * cellW, row * cellH, cellW - 1, cellH - 1));
+
+                        // الصورة داخل الخلية
+                        ctx.DrawImage(cell, new SixLabors.ImageSharp.Point(x, y), 1f);
+                    });
+                }
+            }
+
+            // شريط عنوان في الأسفل
+            grid.Mutate(ctx =>
+            {
+                ctx.Fill(SixLabors.ImageSharp.Color.Black,
+                    new RectangleF(0, outputHeight - 30, outputWidth, 30));
+
+                string title = $"معايرة الصورة — Gamma: [{string.Join(", ", gammaValues.Select(g => g.ToString("F2")))}]" +
+                               $"  Contrast: [{string.Join(", ", contrastValues.Select(c => c.ToString("F2")))}]";
+                ctx.DrawText(new RichTextOptions(_labelFont)
+                {
+                    Origin              = new PointF(outputWidth / 2f, outputHeight - 15f),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment   = VerticalAlignment.Center
+                }, title, SixLabors.ImageSharp.Color.LightGray);
+            });
+
+            return grid;
+        }
+
+        /// <summary>يحفظ شبكة المعايرة كـ JPG.</summary>
+        public static string SaveGrid(
+            Image<Bgra32> source,
+            string        outputFolder,
+            float[]?      gammaValues    = null,
+            float[]?      contrastValues = null,
+            int           quality        = 95)
+        {
+            Directory.CreateDirectory(outputFolder);
+            string path = Path.Combine(outputFolder,
+                $"CalibrationGrid_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
+
+            using var grid = CreateGrid(source, gammaValues, contrastValues);
+            using var fs   = File.OpenWrite(path);
+            grid.SaveAsJpeg(fs,
+                new SixLabors.ImageSharp.Formats.Jpeg.JpegEncoder { Quality = quality });
+
+            return path;
+        }
+
+        private static void ApplyGamma(Image<Bgra32> img, float gamma)
+        {
+            byte[] lut = new byte[256];
+            double inv = 1.0 / gamma;
+            for (int i = 0; i < 256; i++)
+                lut[i] = (byte)(Math.Pow(i / 255.0, inv) * 255.0 + 0.5);
+
+            img.ProcessPixelRows(accessor =>
+            {
+                for (int y = 0; y < accessor.Height; y++)
+                {
+                    var row = accessor.GetRowSpan(y);
+                    for (int x = 0; x < row.Length; x++)
+                    {
+                        ref var p = ref row[x];
+                        p.R = lut[p.R];
+                        p.G = lut[p.G];
+                        p.B = lut[p.B];
+                    }
+                }
+            });
+        }
     }
 }

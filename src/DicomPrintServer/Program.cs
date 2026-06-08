@@ -9,7 +9,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 // ============================================================
-// DICOM Print Server — نقطة الدخول الرئيسية  (v2.0)
+// DICOM Print Server — نقطة الدخول الرئيسية
+// M1: Multi-Port DICOM Print SCP
+// M2-A: JPG Export via ImageSharp
 // ============================================================
 
 var host = Host.CreateDefaultBuilder(args)
@@ -17,15 +19,15 @@ var host = Host.CreateDefaultBuilder(args)
         options.ServiceName = "DICOM Print Server")
     .ConfigureServices((context, services) =>
     {
-        // ── إعدادات التطبيق ──────────────────────────────────────────────
+        // ── إعدادات التطبيق ──────────────────────────────
         services.Configure<PrintServerConfig>(
             context.Configuration.GetSection("PrintServer"));
 
-        // ── fo-dicom ─────────────────────────────────────────────────────
+        // ── fo-dicom (يسجّل IDicomServerFactory تلقائياً) ─
         services.AddFellowOakDicom()
                 .AddImageManager<ImageSharpImageManager>();
 
-        // ── خدمات الطباعة الأساسية ────────────────────────────────────────
+        // ── خدمات الطباعة ────────────────────────────────
         services.AddSingleton<PrintConfigProvider>();
         services.AddSingleton<CalibrationService>();
         services.AddSingleton<JpgExporter>();
@@ -34,44 +36,39 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<LicenseManager>();
         services.AddSingleton<TrialManager>();
         services.AddSingleton<SecurityGuard>();
-
-        // ── HIS/RIS Client (M8) ──────────────────────────────────────────
-        services.AddSingleton<HisRisClient>();
-
-        // ── استضافة الصور لـ Twilio (M6-T) ──────────────────────────────
-        services.AddSingleton<ImageHostingService>();
-
-        // ── WhatsApp Notifier (M7) ────────────────────────────────────────
         services.AddSingleton<WhatsAppNotifier>(sp =>
         {
-            var cfg          = sp.GetRequiredService<IOptions<PrintServerConfig>>().Value;
-            var wa           = cfg.WhatsApp ?? new WhatsAppServerConfig();
-            var imageHosting = sp.GetRequiredService<ImageHostingService>();
-            var logger       = sp.GetRequiredService<ILogger<WhatsAppNotifier>>();
-
+            var cfg = sp.GetRequiredService<IOptions<PrintServerConfig>>().Value;
+            var wa  = cfg.WhatsApp ?? new WhatsAppServerConfig();
             return new WhatsAppNotifier(
-                logger,
+                sp.GetRequiredService<ILogger<WhatsAppNotifier>>(),
                 new WhatsAppConfig
                 {
-                    Enabled               = wa.Enabled,
-                    Provider              = wa.Provider,
-                    ApiKey                = wa.ApiKey,
-                    AccountSid            = wa.AccountSid,
-                    AuthToken             = wa.AuthToken,
-                    FromNumber            = wa.FromNumber,
-                    PhoneNumberId         = wa.PhoneNumberId,
-                    MessageTemplate       = wa.MessageTemplate,
-                    SendImage             = wa.SendImage,
-                    DefaultRecipientPhone = wa.DefaultRecipientPhone
-                },
-                imageHosting);
+                    Enabled                = wa.Enabled,
+                    Provider               = wa.Provider,
+                    ApiKey                 = wa.ApiKey,
+                    AccountSid             = wa.AccountSid,
+                    AuthToken              = wa.AuthToken,
+                    FromNumber             = wa.FromNumber,
+                    PhoneNumberId          = wa.PhoneNumberId,
+                    MessageTemplate        = wa.MessageTemplate,
+                    SendImage              = wa.SendImage,
+                    DefaultRecipientPhone  = wa.DefaultRecipientPhone
+                });
+        });
+        services.AddSingleton<MultiPortManager>();
+        services.AddSingleton<PdfSessionManager>();
+        services.AddSingleton<PrintRepository>(sp =>
+        {
+            var repo = new PrintRepository(
+                sp.GetRequiredService<ILogger<PrintRepository>>());
+            repo.Initialize();
+            return repo;
         });
 
-        // ── Multi-Port DICOM Manager ──────────────────────────────────────
-        services.AddSingleton<MultiPortManager>();
-
-        // ── Background Worker ─────────────────────────────────────────────
+        // ── Workers ──────────────────────────────────────
         services.AddHostedService<PrintServerWorker>();
+        services.AddHostedService<AdminApiWorker>();
     })
     .ConfigureLogging((context, logging) =>
     {
@@ -85,7 +82,8 @@ var host = Host.CreateDefaultBuilder(args)
     })
     .Build();
 
-// ── إعطاء fo-dicom مزوّد الخدمات ────────────────────────────────────────
+// ── نُعطي fo-dicom مزوّد الخدمات الخاص بنا ─────────────────
+// هذا يتيح لـ DicomServerFactory.Create<T>() الثابت العمل أيضاً
 DicomSetupBuilder.UseServiceProvider(host.Services);
 
 await host.RunAsync();

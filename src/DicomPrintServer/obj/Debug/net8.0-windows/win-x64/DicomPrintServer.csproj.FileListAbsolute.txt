@@ -246,3 +246,12 @@
 /home/runner/workspace/src/DicomPrintServer/bin/Debug/net8.0-windows/win-x64/ICSharpCode.SharpZipLib.dll
 /home/runner/workspace/src/DicomPrintServer/bin/Debug/net8.0-windows/win-x64/de/PdfSharpCore.resources.dll
 /home/runner/workspace/src/DicomPrintServer/bin/Debug/net8.0-windows/win-x64/System.Security.Cryptography.ProtectedData.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Debug\net8.0-windows\win-x64\DicomPrintServer.csproj.AssemblyReference.cache
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Debug\net8.0-windows\win-x64\DicomPrintServer.GeneratedMSBuildEditorConfig.editorconfig
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Debug\net8.0-windows\win-x64\DicomPrintServer.AssemblyInfoInputs.cache
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Debug\net8.0-windows\win-x64\DicomPrintServer.AssemblyInfo.cs
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Debug\net8.0-windows\win-x64\DicomPrintServer.csproj.CoreCompileInputs.cache
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Debug\net8.0-windows\win-x64\DicomPrintServer.sourcelink.json
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Debug\net8.0-windows\win-x64\DicomPrintServer.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Debug\net8.0-windows\win-x64\refint\DicomPrintServer.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\obj\Debug\net8.0-windows\win-x64\DicomPrintServer.pdb

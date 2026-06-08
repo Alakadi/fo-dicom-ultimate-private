@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
 using DicomPrintServer.Configuration;
 using FellowOakDicom;
 using FellowOakDicom.Printing;
@@ -36,27 +35,24 @@ namespace DicomPrintServer.Services
 
     public class PrintJob : DicomDataset
     {
-        private readonly ListenerConfig       _listenerConfig;
-        private readonly JpgExporter          _jpgExporter;
-        private readonly PdfExporter          _pdfExporter;
-        private readonly PrintMonitor         _monitor;
-        private readonly LicenseManager       _licenseManager;
-        private readonly WhatsAppNotifier?    _whatsApp;
-        private readonly HisRisClient?        _hisRis;
-        private readonly PrintServerConfig    _serverConfig;
+        private readonly ListenerConfig    _listenerConfig;
+        private readonly JpgExporter       _jpgExporter;
+        private readonly PdfExporter       _pdfExporter;
+        private readonly PrintMonitor      _monitor;
+        private readonly WhatsAppNotifier? _whatsApp;
 
-        public bool              SendNEventReport   { get; set; }
-        public Guid              PrintJobGuid       { get; } = Guid.NewGuid();
-        public IList<string>     FilmBoxFolderList  { get; } = new List<string>();
-        public DicomPrinter      Printer            { get; }
-        public PrintJobStatus    Status             { get; private set; }
-        public string            PrintJobFolder     { get; }
+        public bool              SendNEventReport  { get; set; }
+        public Guid              PrintJobGuid      { get; } = Guid.NewGuid();
+        public IList<string>     FilmBoxFolderList { get; } = new List<string>();
+        public DicomPrinter      Printer           { get; }
+        public PrintJobStatus    Status            { get; private set; }
+        public string            PrintJobFolder    { get; }
         public string            FullPrintJobFolder { get; }
-        public Exception?        Error              { get; private set; }
-        public string            FilmSessionLabel   { get; private set; } = string.Empty;
-        public DicomUID          SOPClassUID        { get; } = DicomUID.PrintJob;
-        public DicomUID          SOPInstanceUID     { get; }
-        public ILogger           Log                { get; }
+        public Exception?        Error             { get; private set; }
+        public string            FilmSessionLabel  { get; private set; } = string.Empty;
+        public DicomUID          SOPClassUID       { get; } = DicomUID.PrintJob;
+        public DicomUID          SOPInstanceUID    { get; }
+        public ILogger           Log               { get; }
 
         public string ExecutionStatus
         {
@@ -105,18 +101,15 @@ namespace DicomPrintServer.Services
         // ══════════════════════════════════════════════════════════════════════
 
         public PrintJob(
-            DicomUID?          sopInstance,
-            DicomPrinter       printer,
-            string             originator,
-            ILogger            log,
-            ListenerConfig     listenerConfig,
-            JpgExporter        jpgExporter,
-            PdfExporter        pdfExporter,
-            PrintMonitor       monitor,
-            LicenseManager     licenseManager,
-            PrintServerConfig  serverConfig,
-            WhatsAppNotifier?  whatsApp = null,
-            HisRisClient?      hisRis   = null)
+            DicomUID?         sopInstance,
+            DicomPrinter      printer,
+            string            originator,
+            ILogger           log,
+            ListenerConfig    listenerConfig,
+            JpgExporter       jpgExporter,
+            PdfExporter       pdfExporter,
+            PrintMonitor      monitor,
+            WhatsAppNotifier? whatsApp = null)
         {
             Log              = log;
             Printer          = printer ?? throw new ArgumentNullException(nameof(printer));
@@ -124,10 +117,7 @@ namespace DicomPrintServer.Services
             _jpgExporter     = jpgExporter;
             _pdfExporter     = pdfExporter;
             _monitor         = monitor;
-            _licenseManager  = licenseManager;
-            _serverConfig    = serverConfig;
             _whatsApp        = whatsApp;
-            _hisRis          = hisRis;
 
             SOPInstanceUID = sopInstance == null || string.IsNullOrEmpty(sopInstance.UID)
                 ? DicomUID.Generate()
@@ -160,20 +150,6 @@ namespace DicomPrintServer.Services
         {
             try
             {
-                // ── فحص الحد الأقصى قبل أي شيء ────────────────────────────
-                var maxOps = _licenseManager.GetLicensedMaxOperations();
-                if (maxOps.HasValue && _monitor.HasExceededLimit(maxOps.Value))
-                {
-                    string msg = $"License operation limit reached ({maxOps.Value} operations). " +
-                                 "Contact your vendor to upgrade your license.";
-                    Log.LogError("[PrintJob] BLOCKED — {Msg}", msg);
-                    Error  = new InvalidOperationException(msg);
-                    Status = PrintJobStatus.Failure;
-                    OnStatusUpdate("LIMIT_EXCEEDED");
-                    _monitor.RecordJobFailure(_listenerConfig.AET, SOPInstanceUID.UID, msg);
-                    return;
-                }
-
                 Status = PrintJobStatus.Pending;
                 OnStatusUpdate("QUEUED");
 
@@ -194,6 +170,7 @@ namespace DicomPrintServer.Services
 
                 FilmSessionLabel = filmBoxList.First().FilmSession.FilmSessionLabel;
 
+                // M5: سجّل استقبال المهمة
                 _monitor.RecordJobReceived(_listenerConfig.AET, SOPInstanceUID.UID);
 
                 var thread = new Thread(DoPrint)
@@ -222,22 +199,12 @@ namespace DicomPrintServer.Services
             var filmBoxList = state as IList<FilmBox>;
             var started     = DateTime.UtcNow;
             int pages       = filmBoxList?.Count ?? 0;
-            string? lastJpgPath   = null;
-            string? patientName   = null;
-            string? patientId     = null;
+            string? lastJpgPath = null;
 
             try
             {
                 Status = PrintJobStatus.Printing;
                 OnStatusUpdate("PRINTING");
-
-                // استخراج بيانات أولية من FilmSession
-                if (filmBoxList?.Count > 0)
-                {
-                    var sess = filmBoxList[0].FilmSession;
-                    patientName = sess.GetSingleValueOrDefault(DicomTag.PatientName, "");
-                    patientId   = sess.GetSingleValueOrDefault(DicomTag.PatientID,   "");
-                }
 
                 // ── M2-A: حفظ JPG ────────────────────────────────────────────
                 if (_listenerConfig.SaveJpg)
@@ -263,7 +230,8 @@ namespace DicomPrintServer.Services
                     var pdfOutput = Path.Combine(FullPrintJobFolder, "PDF");
                     Directory.CreateDirectory(pdfOutput);
 
-                    var annotCtx = BuildAnnotationContext(filmBoxList[0]);
+                    var annotCtx = filmBoxList.Count > 0
+                        ? BuildAnnotationContext(filmBoxList[0]) : null;
 
                     var pdfPath = _pdfExporter.ExportFilmBoxList(
                         filmBoxList, pdfOutput, _listenerConfig, annotCtx);
@@ -283,31 +251,43 @@ namespace DicomPrintServer.Services
                 Status = PrintJobStatus.Done;
                 OnStatusUpdate("NORMAL");
 
+                // M5: سجّل نجاح المهمة
                 _monitor.RecordJobSuccess(
                     _listenerConfig.AET,
                     SOPInstanceUID.UID,
                     pages,
                     DateTime.UtcNow - started,
-                    patientName: patientName,
                     outputPath: lastJpgPath);
 
-                // ── M7: إرسال WhatsApp ─────────────────────────────────────────
-                if (_whatsApp != null && filmBoxList?.Count > 0)
+                // M7: إشعار WhatsApp عند اكتمال الطباعة
+                if (_whatsApp != null)
                 {
-                    var phone = ResolvePatientPhone(filmBoxList[0]);
-                    if (!string.IsNullOrEmpty(phone))
+                    string? patientName = null;
+                    try
                     {
-                        _whatsApp.SendPrintCompletedAsync(
-                            phone,
-                            patientName ?? "Unknown",
-                            pages,
-                            lastJpgPath).GetAwaiter().GetResult();
+                        patientName = filmBoxList?.FirstOrDefault()
+                            ?.FilmSession.GetSingleValueOrDefault<string>(DicomTag.PatientName, null!);
                     }
-                    else
+                    catch { }
+
+                    // رقم الهاتف: نستخدم الرقم الافتراضي من إعدادات WhatsApp
+                    string phone = _whatsApp.DefaultRecipientPhone ?? "";
+
+                    _ = Task.Run(async () =>
                     {
-                        Log.LogWarning("WhatsApp: no phone found for patient {Name} — skipping",
-                            patientName);
-                    }
+                        try
+                        {
+                            await _whatsApp.SendPrintCompletedAsync(
+                                toPhoneNumber : phone,
+                                patientName   : patientName ?? "Unknown",
+                                pageCount     : pages,
+                                jpgFilePath   : lastJpgPath);
+                        }
+                        catch (Exception wex)
+                        {
+                            Log.LogWarning(wex, "WhatsApp notification failed");
+                        }
+                    });
                 }
             }
             catch (Exception ex)
@@ -316,86 +296,11 @@ namespace DicomPrintServer.Services
                 Error  = ex;
                 Status = PrintJobStatus.Failure;
                 OnStatusUpdate("UNKNOWN");
+
+                // M5: سجّل فشل المهمة
                 _monitor.RecordJobFailure(
                     _listenerConfig.AET, SOPInstanceUID.UID, ex.Message, pages);
             }
-        }
-
-        // ══════════════════════════════════════════════════════════════════════
-        // استخراج رقم الهاتف — الأولوية: DICOM tag → HIS/RIS → Default
-        // ══════════════════════════════════════════════════════════════════════
-
-        private string? ResolvePatientPhone(FilmBox filmBox)
-        {
-            var session = filmBox.FilmSession;
-
-            // 1. تاق DICOM (PatientComments أو ما هو مُضبوط في الإعدادات)
-            string tagKeyword = _serverConfig.HisRis.PhoneDicomTagKeyword;
-            try
-            {
-                // PatientComments = (0010,4000)
-                string? tagVal = null;
-                if (tagKeyword == "PatientComments" || tagKeyword == "PatientAddress")
-                {
-                    tagVal = tagKeyword == "PatientComments"
-                        ? session.GetSingleValueOrDefault(DicomTag.PatientComments, "")
-                        : session.GetSingleValueOrDefault(DicomTag.PatientAddress, "");
-                }
-
-                if (!string.IsNullOrWhiteSpace(tagVal) && IsValidPhone(tagVal))
-                {
-                    Log.LogDebug("Phone from DICOM tag [{Tag}]: {Phone}", tagKeyword, tagVal);
-                    return NormalizePhone(tagVal);
-                }
-            }
-            catch { }
-
-            // 2. HIS/RIS
-            if (_hisRis != null)
-            {
-                try
-                {
-                    string patientId   = session.GetSingleValueOrDefault(DicomTag.PatientID,   "");
-                    string patientName = session.GetSingleValueOrDefault(DicomTag.PatientName, "");
-                    var phone = _hisRis.GetPatientPhoneAsync(patientId, patientName)
-                                       .GetAwaiter().GetResult();
-                    if (!string.IsNullOrWhiteSpace(phone))
-                    {
-                        Log.LogDebug("Phone from HIS/RIS: {Phone}", phone);
-                        return NormalizePhone(phone!);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log.LogWarning(ex, "HIS/RIS phone lookup failed");
-                }
-            }
-
-            // 3. الرقم الافتراضي من الإعدادات
-            var waConfig = _serverConfig.WhatsApp;
-            if (!string.IsNullOrWhiteSpace(waConfig?.DefaultRecipientPhone))
-            {
-                Log.LogDebug("Using default WhatsApp phone: {Phone}",
-                    waConfig.DefaultRecipientPhone);
-                return NormalizePhone(waConfig.DefaultRecipientPhone!);
-            }
-
-            return null;
-        }
-
-        private static bool IsValidPhone(string? phone)
-        {
-            if (string.IsNullOrWhiteSpace(phone)) return false;
-            string digits = new string(phone.Where(c => char.IsDigit(c) || c == '+').ToArray());
-            return digits.Length >= 7;
-        }
-
-        private static string NormalizePhone(string phone)
-        {
-            var sb = new System.Text.StringBuilder();
-            foreach (char c in phone)
-                if (char.IsDigit(c) || c == '+') sb.Append(c);
-            return sb.ToString();
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -458,6 +363,7 @@ namespace DicomPrintServer.Services
         // Helpers
         // ══════════════════════════════════════════════════════════════════════
 
+        /// <summary>يبني AnnotationContext من بيانات FilmSession.</summary>
         private AnnotationContext BuildAnnotationContext(FilmBox filmBox)
         {
             var session = filmBox.FilmSession;
@@ -465,10 +371,10 @@ namespace DicomPrintServer.Services
             {
                 AET         = _listenerConfig.AET,
                 PatientName = session.GetSingleValueOrDefault(DicomTag.PatientName, ""),
-                PatientId   = session.GetSingleValueOrDefault(DicomTag.PatientID,   ""),
-                StudyDate   = session.GetSingleValueOrDefault(DicomTag.StudyDate,   ""),
-                StudyId     = session.GetSingleValueOrDefault(DicomTag.StudyID,     ""),
-                Modality    = session.GetSingleValueOrDefault(DicomTag.Modality,    ""),
+                PatientId   = session.GetSingleValueOrDefault(DicomTag.PatientID, ""),
+                StudyDate   = session.GetSingleValueOrDefault(DicomTag.StudyDate, ""),
+                StudyId     = session.GetSingleValueOrDefault(DicomTag.StudyID, ""),
+                Modality    = session.GetSingleValueOrDefault(DicomTag.Modality, ""),
                 Institution = session.GetSingleValueOrDefault(DicomTag.InstitutionName, "")
             };
         }

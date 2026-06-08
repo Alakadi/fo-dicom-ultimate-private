@@ -5,20 +5,14 @@ using FellowOakDicom.Network;
 using FellowOakDicom.Printing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace DicomPrintServer.Services
 {
     /// <summary>
     /// DICOM Print SCP handler — يُعالج اتصال واحد من جهاز طبي.
-    ///
     /// يستخدم PrintConfigProvider لمعرفة إعدادات المنفذ بناءً على CalledAE.
-    /// مبني على نموذج Print SCP الأصلي في fo-dicom مع إضافات:
-    ///   - دعم التكوين الديناميكي متعدد المنافذ
-    ///   - JPG / PDF export
-    ///   - M6-L: فرض حدود الترخيص (MaxOperations) قبل الطباعة
-    ///   - M7:   إشعارات WhatsApp بعد النجاح
-    ///   - M8:   استعلام HIS/RIS لرقم الهاتف
+    /// مبني على نموذج Print SCP الأصلي في samples/Core/Print SCP/PrintService.cs
+    /// مع إضافة: دعم التكوين الديناميكي، JPG export، متعدد المنافذ.
     /// </summary>
     public class DicomPrintService : DicomService, IDicomServiceProvider, IDicomNServiceProvider, IDicomCEchoProvider
     {
@@ -33,13 +27,11 @@ namespace DicomPrintServer.Services
         private readonly JpgExporter          _jpgExporter;
         private readonly PdfExporter          _pdfExporter;
         private readonly PrintMonitor         _monitor;
-        private readonly LicenseManager       _licenseManager;
-        private readonly PrintServerConfig    _serverConfig;
         private readonly WhatsAppNotifier?    _whatsApp;
-        private readonly HisRisClient?        _hisRis;
+        private readonly PdfSessionManager?   _pdfSessionMgr;
 
-        private FilmSession?   _filmSession;
-        private DicomPrinter?  _printer;
+        private FilmSession? _filmSession;
+        private DicomPrinter? _printer;
         private ListenerConfig? _config;
 
         private readonly Dictionary<string, PrintJob> _printJobs = new();
@@ -47,27 +39,21 @@ namespace DicomPrintServer.Services
         private readonly object _lock = new();
 
         public string CallingAE { get; private set; } = string.Empty;
-        public string CalledAE  { get; private set; } = string.Empty;
+        public string CalledAE { get; private set; } = string.Empty;
 
         public DicomPrintService(
-            INetworkStream           stream,
-            Encoding                 fallbackEncoding,
-            ILogger                  log,
+            INetworkStream stream,
+            Encoding fallbackEncoding,
+            ILogger log,
             DicomServiceDependencies dependencies)
             : base(stream, fallbackEncoding, log, dependencies)
         {
-            var sp = dependencies.ServiceProvider;
-
-            _configProvider = sp.GetRequiredService<PrintConfigProvider>();
-            _jpgExporter    = sp.GetRequiredService<JpgExporter>();
-            _pdfExporter    = sp.GetRequiredService<PdfExporter>();
-            _monitor        = sp.GetRequiredService<PrintMonitor>();
-            _licenseManager = sp.GetRequiredService<LicenseManager>();
-            _serverConfig   = sp.GetRequiredService<IOptions<PrintServerConfig>>().Value;
-
-            // اختياري — لا يوقف الخادم إذا لم يكن مسجَّلاً
-            _whatsApp       = sp.GetService<WhatsAppNotifier>();
-            _hisRis         = sp.GetService<HisRisClient>();
+            _configProvider = dependencies.ServiceProvider.GetRequiredService<PrintConfigProvider>();
+            _jpgExporter    = dependencies.ServiceProvider.GetRequiredService<JpgExporter>();
+            _pdfExporter    = dependencies.ServiceProvider.GetRequiredService<PdfExporter>();
+            _monitor        = dependencies.ServiceProvider.GetRequiredService<PrintMonitor>();
+            _whatsApp       = dependencies.ServiceProvider.GetService<WhatsAppNotifier>();
+            _pdfSessionMgr  = dependencies.ServiceProvider.GetService<PdfSessionManager>();
         }
 
         #region IDicomServiceProvider
@@ -90,8 +76,8 @@ namespace DicomPrintServer.Services
             }
 
             CallingAE = association.CallingAE;
-            CalledAE  = association.CalledAE;
-            _printer  = new DicomPrinter(_config.AET, _config.WindowsPrinterName);
+            CalledAE = association.CalledAE;
+            _printer = new DicomPrinter(_config.AET, _config.WindowsPrinterName);
 
             foreach (var pc in association.PresentationContexts)
             {
@@ -355,15 +341,15 @@ namespace DicomPrintServer.Services
             }
             else
             {
-                ds.Add(DicomTag.PrinterStatus,          _printer?.PrinterStatus ?? "NORMAL");
-                ds.Add(DicomTag.PrinterStatusInfo,      _printer?.PrinterStatusInfo ?? "NORMAL");
-                ds.Add(DicomTag.PrinterName,            _printer?.PrinterName ?? CalledAE);
-                ds.Add(DicomTag.Manufacturer,           "DicomPrintServer");
-                ds.Add(DicomTag.DateOfLastCalibration,  DateTime.Today);
-                ds.Add(DicomTag.TimeOfLastCalibration,  DateTime.Now);
-                ds.Add(DicomTag.ManufacturerModelName,  "v2.0");
-                ds.Add(DicomTag.DeviceSerialNumber,     "001");
-                ds.Add(DicomTag.SoftwareVersions,       "2.0");
+                ds.Add(DicomTag.PrinterStatus, _printer?.PrinterStatus ?? "NORMAL");
+                ds.Add(DicomTag.PrinterStatusInfo, _printer?.PrinterStatusInfo ?? "NORMAL");
+                ds.Add(DicomTag.PrinterName, _printer?.PrinterName ?? CalledAE);
+                ds.Add(DicomTag.Manufacturer, _printer?.Manufacturer ?? "DicomPrintServer");
+                ds.Add(DicomTag.DateOfLastCalibration, DateTime.Today);
+                ds.Add(DicomTag.TimeOfLastCalibration, DateTime.Now);
+                ds.Add(DicomTag.ManufacturerModelName, _printer?.ManufacturerModelName ?? "v1.0");
+                ds.Add(DicomTag.DeviceSerialNumber, "001");
+                ds.Add(DicomTag.SoftwareVersions, "1.0");
             }
 
             return new DicomNGetResponse(request, DicomStatus.Success) { Dataset = ds };
@@ -421,10 +407,8 @@ namespace DicomPrintServer.Services
                         var filmBox = _filmSession.FindFilmBox(request.SOPInstanceUID);
                         if (filmBox == null)
                         {
-                            Logger.LogError("FilmBox {UID} not found for N-ACTION",
-                                request.SOPInstanceUID.UID);
-                            return Task.FromResult(new DicomNActionResponse(
-                                request, DicomStatus.NoSuchObjectInstance));
+                            Logger.LogError("FilmBox {UID} not found for N-ACTION", request.SOPInstanceUID.UID);
+                            return Task.FromResult(new DicomNActionResponse(request, DicomStatus.NoSuchObjectInstance));
                         }
                         filmBoxList.Add(filmBox);
                     }
@@ -436,20 +420,9 @@ namespace DicomPrintServer.Services
                         return Task.FromResult(new DicomNActionResponse(request, status));
                     }
 
-                    // ── إنشاء PrintJob مع جميع الخدمات المُحقَنة ─────────────
                     var printJob = new PrintJob(
-                        sopInstance:    null,
-                        printer:        _printer!,
-                        originator:     CallingAE,
-                        log:            Logger,
-                        listenerConfig: _config!,
-                        jpgExporter:    _jpgExporter,
-                        pdfExporter:    _pdfExporter,
-                        monitor:        _monitor,
-                        licenseManager: _licenseManager,
-                        serverConfig:   _serverConfig,
-                        whatsApp:       _whatsApp,
-                        hisRis:         _hisRis)
+                        null, _printer!, CallingAE, Logger, _config!,
+                        _jpgExporter, _pdfExporter, _monitor, _whatsApp)
                     {
                         SendNEventReport = _sendEventReports
                     };
@@ -457,6 +430,13 @@ namespace DicomPrintServer.Services
                     printJob.StatusUpdate += OnPrintJobStatusUpdate;
                     _printJobs[printJob.SOPInstanceUID.UID] = printJob;
                     printJob.Print(filmBoxList);
+
+                    // M3-E: إضافة FilmBoxes لجلسة PDF المريض (إذا كان SavePdf مفعّلاً)
+                    if (_config!.SavePdf && _pdfSessionMgr != null)
+                    {
+                        foreach (var fb in filmBoxList)
+                            _pdfSessionMgr.AddFilmBox(fb, _config);
+                    }
 
                     if (printJob.Error != null)
                         throw printJob.Error;
@@ -478,8 +458,7 @@ namespace DicomPrintServer.Services
                 catch (Exception ex)
                 {
                     Logger.LogError(ex, "N-ACTION failed for {AE}", CallingAE);
-                    return Task.FromResult(
-                        new DicomNActionResponse(request, DicomStatus.ProcessingFailure));
+                    return Task.FromResult(new DicomNActionResponse(request, DicomStatus.ProcessingFailure));
                 }
             }
         }
@@ -488,13 +467,12 @@ namespace DicomPrintServer.Services
         {
             if (sender is PrintJob job && job.SendNEventReport)
             {
-                var report = new DicomNEventReportRequest(
-                    job.SOPClassUID, job.SOPInstanceUID, e.EventTypeId);
+                var report = new DicomNEventReportRequest(job.SOPClassUID, job.SOPInstanceUID, e.EventTypeId);
                 report.Dataset = new DicomDataset
                 {
                     { DicomTag.ExecutionStatusInfo, e.ExecutionStatusInfo },
-                    { DicomTag.FilmSessionLabel,    e.FilmSessionLabel    },
-                    { DicomTag.PrinterName,         e.PrinterName         }
+                    { DicomTag.FilmSessionLabel, e.FilmSessionLabel },
+                    { DicomTag.PrinterName, e.PrinterName }
                 };
                 SendRequestAsync(report).Wait();
             }

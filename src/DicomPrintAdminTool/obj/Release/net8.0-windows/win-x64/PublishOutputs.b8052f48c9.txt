@@ -1,0 +1,2 @@
+C:\Build\DicomPrintAdminTool\DicomPrintAdminTool.pdb
+C:\Build\DicomPrintAdminTool\DicomPrintAdminTool.exe

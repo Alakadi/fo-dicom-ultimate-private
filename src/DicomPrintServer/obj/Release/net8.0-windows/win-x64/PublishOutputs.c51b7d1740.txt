@@ -1,0 +1,4 @@
+C:\Build\DicomPrintServer\appsettings.Development.json
+C:\Build\DicomPrintServer\appsettings.json
+C:\Build\DicomPrintServer\DicomPrintServer.pdb
+C:\Build\DicomPrintServer\DicomPrintServer.exe

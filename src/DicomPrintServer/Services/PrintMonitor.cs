@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -15,11 +14,6 @@ namespace DicomPrintServer.Services
     ///   - إحصاءات يومية وشهرية
     ///   - آخر N مهمة (سجل قابل للاستعلام)
     ///   - تصدير تقرير JSON / نص عادي
-    ///
-    /// مضاد للتلاعب:
-    ///   - عداد إجمالي العمليات الناجحة يُحفظ على القرص مُشفَّراً بـ AES-GCM
-    ///   - محاط بـ Machine ID لضمان ارتباطه بالجهاز
-    ///   - يُقرأ عند بدء التشغيل ويُكتب بعد كل نجاح
     ///
     /// thread-safe بالكامل (ConcurrentDictionary + Interlocked).
     /// </summary>
@@ -44,55 +38,22 @@ namespace DicomPrintServer.Services
         private readonly ConcurrentQueue<PrintJobRecord> _recentJobs = new();
         private const int MaxRecentJobs = 500;
 
-        // ─── ملف العداد المُشفَّر ──────────────────────────────────────────────
-        private const string CounterDir  = ".dpss";
-        private const string CounterFile = ".counter";
-        private readonly object _counterFileLock = new();
-
+        // ─── وقت البدء ───────────────────────────────────────────────────────
         public DateTime StartedAt { get; } = DateTime.UtcNow;
 
-        public PrintMonitor(ILogger<PrintMonitor> logger)
+        private readonly PrintRepository? _db;
+
+        public PrintMonitor(ILogger<PrintMonitor> logger, PrintRepository? db = null)
         {
             _logger = logger;
-        }
-
-        // ══════════════════════════════════════════════════════════════════════
-        // التهيئة — قراءة العداد المُشفَّر عند الإقلاع
-        // ══════════════════════════════════════════════════════════════════════
-
-        /// <summary>
-        /// يُحمّل العداد الدائم من القرص (يُستدعى مرة واحدة عند بدء التشغيل).
-        /// إذا فشل التحميل → يبدأ من الصفر (لا يوقف الخادم).
-        /// </summary>
-        public void LoadPersistentCounter()
-        {
-            try
-            {
-                var data = ReadCounterFile();
-                if (data == null)
-                {
-                    _logger.LogInformation("[Monitor] No persistent counter found — starting from 0");
-                    return;
-                }
-
-                long saved = data.TotalSuccess;
-                if (saved < 0) saved = 0;
-
-                Interlocked.Exchange(ref _totalJobsSuccess, saved);
-                _logger.LogInformation(
-                    "[Monitor] Persistent counter loaded: {Count} total successful jobs",
-                    saved);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "[Monitor] Failed to load persistent counter — starting from 0");
-            }
+            _db     = db;
         }
 
         // ══════════════════════════════════════════════════════════════════════
         // تسجيل الأحداث
         // ══════════════════════════════════════════════════════════════════════
 
+        /// <summary>يُسجَّل عند استقبال مهمة طباعة جديدة.</summary>
         public void RecordJobReceived(string aet, string jobId, string? patientName = null)
         {
             Interlocked.Increment(ref _totalJobsReceived);
@@ -102,6 +63,7 @@ namespace DicomPrintServer.Services
             _logger.LogDebug("[Monitor] Job received — AET={AET} JobId={JobId}", aet, jobId);
         }
 
+        /// <summary>يُسجَّل عند نجاح مهمة الطباعة.</summary>
         public void RecordJobSuccess(
             string aet,
             string jobId,
@@ -128,14 +90,16 @@ namespace DicomPrintServer.Services
             };
             EnqueueRecord(record);
 
+            // M5-A: حفظ في SQLite
+            _db?.RecordSuccess(jobId, aet, null, patientName,
+                pageCount, (long)duration.TotalMilliseconds, outputPath);
+
             _logger.LogInformation(
                 "[Monitor] ✅ Job success — AET={AET} Pages={Pages} Duration={Duration:N0}ms",
                 aet, pageCount, duration.TotalMilliseconds);
-
-            // حفظ العداد على القرص (fire-and-forget)
-            ThreadPool.QueueUserWorkItem(_ => SaveCounterFileSafe());
         }
 
+        /// <summary>يُسجَّل عند فشل مهمة الطباعة.</summary>
         public void RecordJobFailure(
             string aet,
             string jobId,
@@ -158,6 +122,9 @@ namespace DicomPrintServer.Services
             };
             EnqueueRecord(record);
 
+            // M5-A: حفظ في SQLite
+            _db?.RecordFailure(jobId, aet, errorMessage, pageCount);
+
             _logger.LogWarning(
                 "[Monitor] ❌ Job failure — AET={AET} Error={Error}", aet, errorMessage);
         }
@@ -176,21 +143,12 @@ namespace DicomPrintServer.Services
             UptimeSeconds    = (long)(DateTime.UtcNow - StartedAt).TotalSeconds
         };
 
-        /// <summary>يُعيد الإجمالي الحالي للمهام الناجحة (لمقارنة مع MaxOperations).</summary>
-        public long GetTotalSuccessCount() => Interlocked.Read(ref _totalJobsSuccess);
+        public IReadOnlyDictionary<string, PortStats> GetAllPortStats()
+            => _portStats;
 
-        /// <summary>
-        /// يتحقق مما إذا وصلنا للحد الأقصى.
-        /// maxOperations = 0 أو سالب → غير محدود → يُعيد false.
-        /// </summary>
-        public bool HasExceededLimit(long maxOperations)
-        {
-            if (maxOperations <= 0) return false;
-            return GetTotalSuccessCount() >= maxOperations;
-        }
+        public IReadOnlyDictionary<string, DailyStats> GetDailyReport()
+            => _dailyStats;
 
-        public IReadOnlyDictionary<string, PortStats> GetAllPortStats() => _portStats;
-        public IReadOnlyDictionary<string, DailyStats> GetDailyReport() => _dailyStats;
         public IReadOnlyList<PrintJobRecord> GetRecentJobs(int count = 50)
             => _recentJobs.TakeLast(Math.Min(count, MaxRecentJobs)).ToList();
 
@@ -198,21 +156,24 @@ namespace DicomPrintServer.Services
         // تصدير التقارير
         // ══════════════════════════════════════════════════════════════════════
 
+        /// <summary>يُصدّر تقريراً كاملاً بتنسيق JSON.</summary>
         public string ExportReportJson()
         {
             var report = new
             {
-                GeneratedAt = DateTime.UtcNow,
+                GeneratedAt  = DateTime.UtcNow,
                 StartedAt,
-                Global      = GetGlobalStats(),
-                ByPort      = GetAllPortStats(),
-                ByDay       = GetDailyReport(),
-                RecentJobs  = GetRecentJobs(100)
+                Global       = GetGlobalStats(),
+                ByPort       = GetAllPortStats(),
+                ByDay        = GetDailyReport(),
+                RecentJobs   = GetRecentJobs(100)
             };
+
             return JsonSerializer.Serialize(report,
                 new JsonSerializerOptions { WriteIndented = true });
         }
 
+        /// <summary>يُصدّر تقريراً مختصراً كنص عادي.</summary>
         public string ExportReportText()
         {
             var g  = GetGlobalStats();
@@ -241,7 +202,9 @@ namespace DicomPrintServer.Services
 
             sb.AppendLine();
             sb.AppendLine("─── Last 7 Days ────────────────────");
-            var last7 = _dailyStats.OrderByDescending(k => k.Key).Take(7).OrderBy(k => k.Key);
+
+            var last7 = _dailyStats
+                .OrderByDescending(k => k.Key).Take(7).OrderBy(k => k.Key);
             foreach (var (day, stats) in last7)
                 sb.AppendLine($"  {day}  Recv={stats.Received} OK={stats.Success} " +
                               $"Fail={stats.Failed} Pages={stats.TotalPages}");
@@ -249,6 +212,7 @@ namespace DicomPrintServer.Services
             return sb.ToString();
         }
 
+        /// <summary>يحفظ التقرير إلى ملف.</summary>
         public string SaveReport(string outputFolder, bool json = true)
         {
             Directory.CreateDirectory(outputFolder);
@@ -260,119 +224,6 @@ namespace DicomPrintServer.Services
             _logger.LogInformation("Report saved: {Path}", path);
             return path;
         }
-
-        // ══════════════════════════════════════════════════════════════════════
-        // العداد الدائم المُشفَّر
-        // ══════════════════════════════════════════════════════════════════════
-
-        private void SaveCounterFileSafe()
-        {
-            lock (_counterFileLock)
-            {
-                try
-                {
-                    var data = new PersistentCounter
-                    {
-                        TotalSuccess = Interlocked.Read(ref _totalJobsSuccess),
-                        LastUpdated  = DateTime.UtcNow
-                    };
-
-                    string json      = JsonSerializer.Serialize(data);
-                    byte[] jsonBytes = Encoding.UTF8.GetBytes(json);
-                    byte[] encrypted = AesGcmEncrypt(jsonBytes, GetMachineIdBytes());
-                    string encoded   = Convert.ToBase64String(encrypted);
-
-                    File.WriteAllText(GetCounterFilePath(), encoded, Encoding.ASCII);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "[Monitor] Failed to save persistent counter");
-                }
-            }
-        }
-
-        private PersistentCounter? ReadCounterFile()
-        {
-            try
-            {
-                var path = GetCounterFilePath();
-                if (!File.Exists(path)) return null;
-
-                string encoded   = File.ReadAllText(path, Encoding.ASCII).Trim();
-                byte[] encrypted = Convert.FromBase64String(encoded);
-                byte[] decrypted = AesGcmDecrypt(encrypted, GetMachineIdBytes());
-                string json      = Encoding.UTF8.GetString(decrypted);
-
-                return JsonSerializer.Deserialize<PersistentCounter>(json);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static string GetCounterFilePath()
-        {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                CounterDir);
-            Directory.CreateDirectory(dir);
-            return Path.Combine(dir, CounterFile);
-        }
-
-        // ══════════════════════════════════════════════════════════════════════
-        // تشفير AES-GCM
-        // ══════════════════════════════════════════════════════════════════════
-
-        private static byte[] AesGcmEncrypt(byte[] plaintext, byte[] keyMaterial)
-        {
-            var key    = DeriveKey(keyMaterial);
-            var nonce  = new byte[AesGcm.NonceByteSizes.MaxSize];
-            var tag    = new byte[AesGcm.TagByteSizes.MaxSize];
-            var cipher = new byte[plaintext.Length];
-
-            RandomNumberGenerator.Fill(nonce);
-            using var aes = new AesGcm(key, AesGcm.TagByteSizes.MaxSize);
-            aes.Encrypt(nonce, plaintext, cipher, tag);
-
-            var result = new byte[nonce.Length + tag.Length + cipher.Length];
-            nonce.CopyTo(result, 0);
-            tag.CopyTo(result, nonce.Length);
-            cipher.CopyTo(result, nonce.Length + tag.Length);
-            return result;
-        }
-
-        private static byte[] AesGcmDecrypt(byte[] data, byte[] keyMaterial)
-        {
-            var key    = DeriveKey(keyMaterial);
-            int nL     = AesGcm.NonceByteSizes.MaxSize;
-            int tL     = AesGcm.TagByteSizes.MaxSize;
-            var nonce  = data[..nL];
-            var tag    = data[nL..(nL + tL)];
-            var cipher = data[(nL + tL)..];
-            var plain  = new byte[cipher.Length];
-
-            using var aes = new AesGcm(key, AesGcm.TagByteSizes.MaxSize);
-            aes.Decrypt(nonce, cipher, tag, plain);
-            return plain;
-        }
-
-        private static byte[] DeriveKey(byte[] material)
-        {
-            using var sha = SHA256.Create();
-            return sha.ComputeHash(material);
-        }
-
-        private static string? _cachedMachineId;
-        private static string GetMachineId()
-        {
-            if (_cachedMachineId != null) return _cachedMachineId;
-            string raw = Environment.MachineName + Environment.UserName + Environment.UserDomainName;
-            using var sha = SHA256.Create();
-            _cachedMachineId = Convert.ToHexString(sha.ComputeHash(Encoding.UTF8.GetBytes(raw)))[..16];
-            return _cachedMachineId;
-        }
-        private static byte[] GetMachineIdBytes() => Encoding.UTF8.GetBytes(GetMachineId());
 
         // ══════════════════════════════════════════════════════════════════════
         // مساعدات
@@ -411,9 +262,9 @@ namespace DicomPrintServer.Services
         private long _received, _success, _failed, _pages;
         private long _totalDurationMs, _sampleCount;
 
-        public long Received   => Interlocked.Read(ref _received);
-        public long Success    => Interlocked.Read(ref _success);
-        public long Failed     => Interlocked.Read(ref _failed);
+        public long Received  => Interlocked.Read(ref _received);
+        public long Success   => Interlocked.Read(ref _success);
+        public long Failed    => Interlocked.Read(ref _failed);
         public long TotalPages => Interlocked.Read(ref _pages);
         public double AverageDurationMs
         {
@@ -438,12 +289,14 @@ namespace DicomPrintServer.Services
     public class DailyStats
     {
         private long _received, _success, _failed, _pages;
+
         public long Received   => Interlocked.Read(ref _received);
         public long Success    => Interlocked.Read(ref _success);
         public long Failed     => Interlocked.Read(ref _failed);
         public long TotalPages => Interlocked.Read(ref _pages);
-        internal void IncrementReceived() => Interlocked.Increment(ref _received);
-        internal void IncrementFailure()  => Interlocked.Increment(ref _failed);
+
+        internal void IncrementReceived()            => Interlocked.Increment(ref _received);
+        internal void IncrementFailure()             => Interlocked.Increment(ref _failed);
         internal void IncrementSuccess(int pages)
         {
             Interlocked.Increment(ref _success);
@@ -453,20 +306,14 @@ namespace DicomPrintServer.Services
 
     public class PrintJobRecord
     {
-        public string   JobId        { get; init; } = "";
-        public string   AET          { get; init; } = "";
-        public string?  PatientName  { get; init; }
-        public int      PageCount    { get; init; }
-        public TimeSpan Duration     { get; init; }
-        public DateTime Timestamp    { get; init; }
-        public bool     Success      { get; init; }
-        public string?  ErrorMessage { get; init; }
-        public string?  OutputPath   { get; init; }
-    }
-
-    internal class PersistentCounter
-    {
-        public long     TotalSuccess { get; set; }
-        public DateTime LastUpdated  { get; set; }
+        public string    JobId        { get; init; } = "";
+        public string    AET          { get; init; } = "";
+        public string?   PatientName  { get; init; }
+        public int       PageCount    { get; init; }
+        public TimeSpan  Duration     { get; init; }
+        public DateTime  Timestamp    { get; init; }
+        public bool      Success      { get; init; }
+        public string?   ErrorMessage { get; init; }
+        public string?   OutputPath   { get; init; }
     }
 }
