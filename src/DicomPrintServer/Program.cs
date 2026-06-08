@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.IO;
 
 // ============================================================
 // DICOM Print Server — نقطة الدخول الرئيسية
@@ -14,9 +15,21 @@ using Microsoft.Extensions.Options;
 // M2-A: JPG Export via ImageSharp
 // ============================================================
 
+// في single-file publish، نحتاج لتحديد ContentRoot بوضوح
+var basePath = AppContext.BaseDirectory;
+
 var host = Host.CreateDefaultBuilder(args)
+    .UseContentRoot(basePath)
     .UseWindowsService(options =>
         options.ServiceName = "DICOM Print Server")
+    .ConfigureAppConfiguration((context, config) =>
+    {
+        config.SetBasePath(basePath)
+              .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+              .AddJsonFile($"appsettings.{context.HostingEnvironment.EnvironmentName}.json", optional: true)
+              .AddEnvironmentVariables()
+              .AddCommandLine(args);
+    })
     .ConfigureServices((context, services) =>
     {
         // ── إعدادات التطبيق ──────────────────────────────
