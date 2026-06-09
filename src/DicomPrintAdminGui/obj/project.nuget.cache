@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "dgSpecHash": "Uh/nGfusCNGMLkvOvmdbYO+xVIKq3Y9zHkcUfLchzBaD6j1Q5Kpu3D3oeXKqMZIts5jf9oB91P6D4iAiH7tgSQ==",
+  "success": true,
+  "projectFilePath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\DicomPrintAdminGui.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.0-rc.1.23419.4\\microsoft.net.illink.tasks.8.0.0-rc.1.23419.4.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\system.security.cryptography.protecteddata\\8.0.0\\system.security.cryptography.protecteddata.8.0.0.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\8.0.0-rc.1.23419.4\\microsoft.netcore.app.runtime.win-x64.8.0.0-rc.1.23419.4.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.0-rc.1.23420.5\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.0-rc.1.23420.5.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.0-rc.1.23421.29\\microsoft.aspnetcore.app.runtime.win-x64.8.0.0-rc.1.23421.29.nupkg.sha512"
+  ],
+  "logs": []
+}

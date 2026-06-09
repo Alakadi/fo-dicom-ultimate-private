@@ -27,7 +27,7 @@ namespace DicomPrintServer.Services
     /// </summary>
     public class TrialManager
     {
-        private const int    TrialDays          = 14;
+        private const int    TrialHours         = 8;             // مدة التجربة بالساعات
         private const int    MaxOperations      = 50;
         private const int    ClockToleranceMins = 5;
         private const int    NtpTimeoutMs       = 3000;
@@ -43,15 +43,29 @@ namespace DicomPrintServer.Services
 
         public bool IsTrialActive  => GetStatus() == TrialStatus.Active;
         public bool IsTrialExpired => GetStatus() == TrialStatus.Expired;
-        public int  RemainingDays
+
+        /// <summary>الساعات المتبقية من التجربة.</summary>
+        public int  RemainingHours
         {
             get
             {
                 if (_trialData == null) return 0;
                 if (_trialData.FirstRun <= DateTime.MinValue.AddDays(1) || _trialData.FirstRun > DateTime.UtcNow.AddDays(1)) return 0;
-                return Math.Max(0, TrialDays - (int)(DateTime.UtcNow - _trialData.FirstRun).TotalDays);
+                return Math.Max(0, TrialHours - (int)(DateTime.UtcNow - _trialData.FirstRun).TotalHours);
             }
         }
+
+        /// <summary>الدقائق المتبقية (للعرض الدقيق).</summary>
+        public int  RemainingMinutes
+        {
+            get
+            {
+                if (_trialData == null) return 0;
+                double elapsed = (DateTime.UtcNow - _trialData.FirstRun).TotalMinutes;
+                return Math.Max(0, (int)(TrialHours * 60 - elapsed));
+            }
+        }
+
         public int  RemainingOps   => _trialData == null ? 0
             : Math.Max(0, MaxOperations - _trialData.OperationCount);
 
@@ -81,8 +95,8 @@ namespace DicomPrintServer.Services
                     MachineId      = GetMachineId()
                 };
                 SaveTrialDataToBothLocations(_trialData);
-                _logger.LogInformation("Trial started — expires {Date} or after {Ops} operations",
-                    _trialData.FirstRun.AddDays(TrialDays).ToString("yyyy-MM-dd"), MaxOperations);
+                _logger.LogInformation("Trial started — expires after {Hours} hour(s) or {Ops} operations",
+                    TrialHours, MaxOperations);
             }
             else
             {
@@ -99,8 +113,8 @@ namespace DicomPrintServer.Services
                 SaveTrialDataToBothLocations(_trialData);
 
                 _logger.LogInformation(
-                    "Trial loaded — Remaining: {Days} day(s) / {Ops} operation(s) — Launch #{Launch}",
-                    RemainingDays, RemainingOps, _trialData.LaunchCount);
+                    "Trial loaded — Remaining: {Hours}h {Mins}m / {Ops} operation(s) — Launch #{Launch}",
+                    RemainingHours, RemainingMinutes % 60, RemainingOps, _trialData.LaunchCount);
             }
 
             // فحص الحالة بعد التهيئة
@@ -124,8 +138,8 @@ namespace DicomPrintServer.Services
             _trialData!.OperationCount++;
             SaveTrialDataToBothLocations(_trialData);
 
-            _logger.LogDebug("Trial op #{Count} — {Days} days / {Ops} ops remaining",
-                _trialData.OperationCount, RemainingDays, RemainingOps);
+            _logger.LogDebug("Trial op #{Count} — {Hours}h {Mins}m / {Ops} ops remaining",
+                _trialData.OperationCount, RemainingHours, RemainingMinutes % 60, RemainingOps);
             return true;
         }
 
@@ -142,9 +156,9 @@ namespace DicomPrintServer.Services
             if (_trialData.FirstRun <= DateTime.MinValue.AddDays(1) || _trialData.FirstRun > DateTime.UtcNow.AddDays(1))
                 return TrialStatus.Tampered;
 
-            // تحقق من التاريخ (كشف الرجوع للوراء بتسامح 5 دقائق)
-            double daysPassed = (DateTime.UtcNow - _trialData.FirstRun).TotalDays;
-            if (daysPassed < -ClockToleranceMins / 1440.0 || daysPassed > TrialDays + 1)
+            // تحقق من الوقت (بالساعات) مع كشف الرجوع للوراء بتسامح 5 دقائق
+            double hoursPassed = (DateTime.UtcNow - _trialData.FirstRun).TotalHours;
+            if (hoursPassed < -ClockToleranceMins / 60.0 || hoursPassed > TrialHours + 0.5)
                 return TrialStatus.Expired;
 
             // تحقق من عدد العمليات

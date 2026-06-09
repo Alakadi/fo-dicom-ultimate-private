@@ -11,6 +11,11 @@ namespace DicomPrintAdminGui
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+#if TRIAL_BUILD
+            // النسخة التجريبية: فحص مدة 8 ساعات (صامت — لا رسالة عند الانتهاء)
+            AdminTrialGuard.Initialize();
+#endif
+
             // فحص المفتاح الرئيسي للمسؤول
             if (!MasterKeyGuard.IsUnlocked())
             {

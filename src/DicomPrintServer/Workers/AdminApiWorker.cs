@@ -56,12 +56,15 @@ namespace DicomPrintServer.Workers
             }
 
             _listener = new HttpListener();
-            _listener.Prefixes.Add($"http://*:{_cfg.Port}/");
+
+            // http://localhost/ لا يحتاج URL ACL على Windows
+            // http://+/ أو http://*/ يحتاج netsh http add urlacl (يتطلب Admin)
+            _listener.Prefixes.Add($"http://localhost:{_cfg.Port}/");
 
             try
             {
                 _listener.Start();
-                _logger.LogInformation("Admin API listening on http://0.0.0.0:{Port}/", _cfg.Port);
+                _logger.LogInformation("Admin API listening on http://localhost:{Port}/", _cfg.Port);
             }
             catch (Exception ex)
             {

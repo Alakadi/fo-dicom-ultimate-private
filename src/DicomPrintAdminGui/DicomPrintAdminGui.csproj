@@ -9,7 +9,7 @@
     <RootNamespace>DicomPrintAdminGui</RootNamespace>
     <AssemblyName>DicomPrintAdminGui</AssemblyName>
     <Version>1.0.0</Version>
-    <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
+
     <Description>DICOM Print Server — Admin License Manager (Reseller Tool)</Description>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>

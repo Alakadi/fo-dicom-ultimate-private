@@ -1,0 +1,5 @@
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\server\appsettings.Development.json
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\server\appsettings.json
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\server\DicomPrintServer.pdb
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\server\e_sqlite3.dll
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\server\DicomPrintServer.exe

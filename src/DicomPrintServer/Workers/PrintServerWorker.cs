@@ -72,8 +72,9 @@ namespace DicomPrintServer.Workers
                         return;
                     }
                     _logger.LogWarning(
-                        "⚠️  TRIAL MODE — {Days} day(s) / {Ops} operation(s) remaining",
-                        _trialManager.RemainingDays, _trialManager.RemainingOps);
+                        "⚠️  TRIAL MODE — {Hours}h {Mins}m remaining / {Ops} operation(s) left",
+                        _trialManager.RemainingHours, _trialManager.RemainingMinutes % 60,
+                        _trialManager.RemainingOps);
                     break;
 
                 case LicenseStatus.Expired:
