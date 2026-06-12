@@ -29,10 +29,14 @@ namespace DicomPrintServer.Services
         private readonly PrintMonitor         _monitor;
         private readonly WhatsAppNotifier?    _whatsApp;
         private readonly PdfSessionManager?   _pdfSessionMgr;
+        private readonly IConnectionTracker   _connectionTracker;
+        private readonly HisRisClient?        _hisRisClient;
 
         private FilmSession? _filmSession;
         private DicomPrinter? _printer;
         private ListenerConfig? _config;
+
+        private PatientInfo? _currentPatientInfo;
 
         private readonly Dictionary<string, PrintJob> _printJobs = new();
         private bool _sendEventReports;
@@ -48,12 +52,14 @@ namespace DicomPrintServer.Services
             DicomServiceDependencies dependencies)
             : base(stream, fallbackEncoding, log, dependencies)
         {
-            _configProvider = dependencies.ServiceProvider.GetRequiredService<PrintConfigProvider>();
-            _jpgExporter    = dependencies.ServiceProvider.GetRequiredService<JpgExporter>();
-            _pdfExporter    = dependencies.ServiceProvider.GetRequiredService<PdfExporter>();
-            _monitor        = dependencies.ServiceProvider.GetRequiredService<PrintMonitor>();
-            _whatsApp       = dependencies.ServiceProvider.GetService<WhatsAppNotifier>();
-            _pdfSessionMgr  = dependencies.ServiceProvider.GetService<PdfSessionManager>();
+            _configProvider     = dependencies.ServiceProvider.GetRequiredService<PrintConfigProvider>();
+            _jpgExporter        = dependencies.ServiceProvider.GetRequiredService<JpgExporter>();
+            _pdfExporter        = dependencies.ServiceProvider.GetRequiredService<PdfExporter>();
+            _monitor            = dependencies.ServiceProvider.GetRequiredService<PrintMonitor>();
+            _whatsApp           = dependencies.ServiceProvider.GetService<WhatsAppNotifier>();
+            _pdfSessionMgr      = dependencies.ServiceProvider.GetService<PdfSessionManager>();
+            _connectionTracker  = dependencies.ServiceProvider.GetRequiredService<IConnectionTracker>();
+            _hisRisClient       = dependencies.ServiceProvider.GetService<HisRisClient>();
         }
 
         #region IDicomServiceProvider
@@ -106,11 +112,13 @@ namespace DicomPrintServer.Services
             }
 
             Logger.LogInformation("Association accepted from {CallingAE}", association.CallingAE);
+            _connectionTracker.RegisterConnection(CallingAE, CalledAE, association.RemoteHost, _config.Port);
             return SendAssociationAcceptAsync(association);
         }
 
         public Task OnReceiveAssociationReleaseRequestAsync()
         {
+            _connectionTracker.UnregisterConnection(CallingAE, CalledAE);
             Clean();
             return SendAssociationReleaseResponseAsync();
         }
@@ -118,12 +126,14 @@ namespace DicomPrintServer.Services
         public void OnReceiveAbort(DicomAbortSource source, DicomAbortReason reason)
         {
             Logger.LogError("Abort received: source={Source}, reason={Reason}", source, reason);
+            _connectionTracker.UnregisterConnection(CallingAE, CalledAE);
         }
 
         public void OnConnectionClosed(Exception? exception)
         {
             if (exception != null)
                 Logger.LogError(exception, "Connection closed with error");
+            _connectionTracker.UnregisterConnection(CallingAE, CalledAE);
             Clean();
         }
 
@@ -169,6 +179,34 @@ namespace DicomPrintServer.Services
 
             _filmSession = new FilmSession(request.SOPClassUID, request.SOPInstanceUID, request.Dataset, isColor);
             Logger.LogInformation("Film session created: {UID}", _filmSession.SOPInstanceUID.UID);
+
+            // ── استعلام HIS/RIS لبيانات المريض ───────────────────────────────
+            _currentPatientInfo = null;
+            if (_hisRisClient != null)
+            {
+                string patientId = _filmSession.GetSingleValueOrDefault(DicomTag.PatientID, "");
+                string patientName = _filmSession.GetSingleValueOrDefault(DicomTag.PatientName, "");
+                
+                if (!string.IsNullOrWhiteSpace(patientId) || !string.IsNullOrWhiteSpace(patientName))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            _currentPatientInfo = await _hisRisClient!.GetPatientInfoAsync(patientId, patientName);
+                            if (_currentPatientInfo != null)
+                            {
+                                Logger.LogInformation("HisRis: Found patient {Name} (Phone: {Phone})",
+                                    _currentPatientInfo.PatientName, _currentPatientInfo.Phone ?? "none");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogWarning(ex, "HisRis query failed for patientId={Id}", patientId);
+                        }
+                    });
+                }
+            }
 
             if (string.IsNullOrEmpty(request.SOPInstanceUID?.UID))
                 request.Command.AddOrUpdate(DicomTag.AffectedSOPInstanceUID, _filmSession.SOPInstanceUID);
@@ -303,6 +341,25 @@ namespace DicomPrintServer.Services
             if (_filmSession == null || !request.SOPInstanceUID.Equals(_filmSession.SOPInstanceUID))
                 return new DicomNDeleteResponse(request, DicomStatus.NoSuchObjectInstance);
 
+            if (_config?.SavePdf == true && _pdfSessionMgr != null)
+            {
+                var patientId = _filmSession.GetSingleValueOrDefault(DicomTag.PatientID, "");
+                if (!string.IsNullOrEmpty(patientId))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _pdfSessionMgr.FlushSessionAsync(CalledAE, patientId);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogWarning(ex, "Failed to flush PDF session for {PatientId}", patientId);
+                        }
+                    });
+                }
+            }
+
             _filmSession = null;
             return new DicomNDeleteResponse(request, DicomStatus.Success);
         }
@@ -422,7 +479,7 @@ namespace DicomPrintServer.Services
 
                     var printJob = new PrintJob(
                         null, _printer!, CallingAE, Logger, _config!,
-                        _jpgExporter, _pdfExporter, _monitor, _whatsApp)
+                        _jpgExporter, _pdfExporter, _monitor, _whatsApp, _currentPatientInfo, _configProvider.ServerConfig.CenterName)
                     {
                         SendNEventReport = _sendEventReports
                     };

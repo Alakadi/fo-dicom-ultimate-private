@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("DICOM Print Server — Admin and License Generator Tool")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a04cf34ac99b811d664a6c41e46676272316df67")]
 [assembly: System.Reflection.AssemblyProductAttribute("DicomPrintAdminTool")]
 [assembly: System.Reflection.AssemblyTitleAttribute("DicomPrintAdminTool")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

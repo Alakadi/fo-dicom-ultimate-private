@@ -53,6 +53,8 @@ namespace DicomPrintServer.Services
         public DicomUID          SOPClassUID       { get; } = DicomUID.PrintJob;
         public DicomUID          SOPInstanceUID    { get; }
         public ILogger           Log               { get; }
+        public PatientInfo? PatientInfo { get; private set; }
+        public string CenterName { get; private set; } = "مركز الأشعة الطبية";
 
         public string ExecutionStatus
         {
@@ -109,7 +111,9 @@ namespace DicomPrintServer.Services
             JpgExporter       jpgExporter,
             PdfExporter       pdfExporter,
             PrintMonitor      monitor,
-            WhatsAppNotifier? whatsApp = null)
+            WhatsAppNotifier? whatsApp = null,
+            PatientInfo? patientInfo = null,
+            string centerName = "مركز الأشعة الطبية")
         {
             Log              = log;
             Printer          = printer ?? throw new ArgumentNullException(nameof(printer));
@@ -118,6 +122,8 @@ namespace DicomPrintServer.Services
             _pdfExporter     = pdfExporter;
             _monitor         = monitor;
             _whatsApp        = whatsApp;
+            PatientInfo      = patientInfo;
+            CenterName       = centerName;
 
             SOPInstanceUID = sopInstance == null || string.IsNullOrEmpty(sopInstance.UID)
                 ? DicomUID.Generate()
@@ -234,7 +240,7 @@ namespace DicomPrintServer.Services
                         ? BuildAnnotationContext(filmBoxList[0]) : null;
 
                     var pdfPath = _pdfExporter.ExportFilmBoxList(
-                        filmBoxList, pdfOutput, _listenerConfig, annotCtx);
+                        filmBoxList, pdfOutput, _listenerConfig, annotCtx, PatientInfo, CenterName);
 
                     Log.LogInformation("PDF saved → {Path}", pdfPath);
                     lastJpgPath ??= pdfPath;
@@ -262,16 +268,20 @@ namespace DicomPrintServer.Services
                 // M7: إشعار WhatsApp عند اكتمال الطباعة
                 if (_whatsApp != null)
                 {
-                    string? patientName = null;
-                    try
+                    // أولوية رقم الهاتف: PatientInfo من HIS/RIS → DefaultRecipientPhone
+                    string phone = PatientInfo?.Phone ?? _whatsApp.DefaultRecipientPhone ?? "";
+                    
+                    // اسم المريض: PatientInfo من HIS/RIS → FilmSession
+                    string patientName = PatientInfo?.PatientName ?? "";
+                    if (string.IsNullOrWhiteSpace(patientName))
                     {
-                        patientName = filmBoxList?.FirstOrDefault()
-                            ?.FilmSession.GetSingleValueOrDefault<string>(DicomTag.PatientName, null!);
+                        try
+                        {
+                            patientName = filmBoxList?.FirstOrDefault()
+                                ?.FilmSession.GetSingleValueOrDefault<string>(DicomTag.PatientName, null!) ?? "Unknown";
+                        }
+                        catch { patientName = "Unknown"; }
                     }
-                    catch { }
-
-                    // رقم الهاتف: نستخدم الرقم الافتراضي من إعدادات WhatsApp
-                    string phone = _whatsApp.DefaultRecipientPhone ?? "";
 
                     _ = Task.Run(async () =>
                     {
@@ -279,9 +289,10 @@ namespace DicomPrintServer.Services
                         {
                             await _whatsApp.SendPrintCompletedAsync(
                                 toPhoneNumber : phone,
-                                patientName   : patientName ?? "Unknown",
+                                patientName   : patientName,
                                 pageCount     : pages,
-                                jpgFilePath   : lastJpgPath);
+                                jpgFilePath   : lastJpgPath,
+                                patientInfo   : PatientInfo);
                         }
                         catch (Exception wex)
                         {

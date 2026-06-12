@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using DicomPrintServer.Configuration;
+using DicomPrintServer.Services.MWL;
 using FellowOakDicom.Network;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -38,7 +39,7 @@ namespace DicomPrintServer.Services
             _logger = logger;
         }
 
-        /// <summary>يبدأ جميع المنافذ المُعرّفة في appsettings.json</summary>
+        /// <summary>يبدأ جميع المنافذ المُعرّفة في appsettings.json + MWL listener إذا كان مفعلاً</summary>
         public async Task StartAllAsync(CancellationToken cancellationToken = default)
         {
             _logger.LogInformation("Starting {Count} DICOM listener(s)...", _config.Listeners.Count);
@@ -47,6 +48,11 @@ namespace DicomPrintServer.Services
             {
                 if (cancellationToken.IsCancellationRequested) break;
                 await StartListenerAsync(listener, cancellationToken);
+            }
+
+            if (_config.MWL.Enabled)
+            {
+                await StartMWLListenerAsync(cancellationToken);
             }
 
             _logger.LogInformation("All listeners started. Active ports: [{Ports}]",
@@ -123,6 +129,61 @@ namespace DicomPrintServer.Services
             await StartListenerAsync(newListener);
         }
 
+        /// <summary>يبدأ MWL SCP listener على المنفذ المُعرّف في الإعدادات</summary>
+        public Task StartMWLListenerAsync(CancellationToken cancellationToken = default)
+        {
+            int port = _config.MWL.Port;
+
+            if (_servers.ContainsKey(port))
+            {
+                _logger.LogWarning("MWL port {Port} already active — skipping", port);
+                return Task.CompletedTask;
+            }
+
+            try
+            {
+                var server = _serverFactory.Create<MWLService>(port);
+                _servers[port] = server;
+
+                // Register MWL config in PrintConfigProvider so it appears in /api/listeners
+                var mwlConfig = new ListenerConfig
+                {
+                    Port = port,
+                    AET = _config.MWL.AET,
+                    WindowsPrinterName = "",
+                    PrintToWindowsPrinter = false,
+                    SaveJpg = false,
+                    JpgQuality = 95,
+                    SavePdf = false,
+                    OutputFolder = "",
+                    FilmResolutionDpi = 150,
+                    ImageProcessing = new ImageProcessingConfig(),
+                    Annotations = new AnnotationConfig()
+                };
+                _configProvider.RegisterConfig(mwlConfig);
+
+                _logger.LogInformation(
+                    "▶ MWL SCP listener started → Port: {Port} | AET: {AET} | MaxResults: {Max}",
+                    port, _config.MWL.AET, _config.MWL.MaxResults);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to start MWL SCP listener on port {Port} (AET: {AET})",
+                    port, _config.MWL.AET);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        /// <summary>يوقف MWL SCP listener</summary>
+        public Task StopMWLListenerAsync()
+        {
+            int port = _config.MWL.Port;
+            // Unregister MWL config from PrintConfigProvider
+            _configProvider.UnregisterConfig(_config.MWL.AET);
+            return StopListenerAsync(port);
+        }
+
         /// <summary>يوقف جميع المنافذ</summary>
         public async Task StopAllAsync()
         {
@@ -149,6 +210,45 @@ namespace DicomPrintServer.Services
                     });
         }
 
+        /// <summary>يُعيد تفاصيل جميع المستمعين (Print + MWL) للاكتشاف التلقائي</summary>
+        public List<ListenerStatus> GetListenerStatuses()
+        {
+            var statuses = new List<ListenerStatus>();
+
+            // Print SCP listeners
+            foreach (var listener in _config.Listeners)
+            {
+                _servers.TryGetValue(listener.Port, out var server);
+                statuses.Add(new ListenerStatus
+                {
+                    Type = "PrintSCP",
+                    Port = listener.Port,
+                    AET = listener.AET,
+                    IsListening = server?.IsListening ?? false,
+                    WindowsPrinterName = listener.WindowsPrinterName,
+                    SaveJpg = listener.SaveJpg,
+                    SavePdf = listener.SavePdf
+                });
+            }
+
+            // MWL SCP listener
+            if (_config.MWL.Enabled)
+            {
+                _servers.TryGetValue(_config.MWL.Port, out var mwlServer);
+                statuses.Add(new ListenerStatus
+                {
+                    Type = "MWLSCP",
+                    Port = _config.MWL.Port,
+                    AET = _config.MWL.AET,
+                    IsListening = mwlServer?.IsListening ?? false,
+                    DataSource = _config.MWL.DataSource,
+                    MaxResults = _config.MWL.MaxResults
+                });
+            }
+
+            return statuses;
+        }
+
         public int ActiveListenerCount => _servers.Count;
 
         public void Dispose()
@@ -164,4 +264,21 @@ namespace DicomPrintServer.Services
             _servers.Clear();
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// DTOs for Discovery
+// ══════════════════════════════════════════════════════════════════════
+
+public class ListenerStatus
+{
+    public string Type { get; set; } = "";           // PrintSCP | MWLSCP
+    public int Port { get; set; }
+    public string AET { get; set; } = "";
+    public bool IsListening { get; set; }
+    public string? WindowsPrinterName { get; set; }
+    public bool SaveJpg { get; set; }
+    public bool SavePdf { get; set; }
+    public string? DataSource { get; set; }          // for MWL
+    public int MaxResults { get; set; }              // for MWL
 }

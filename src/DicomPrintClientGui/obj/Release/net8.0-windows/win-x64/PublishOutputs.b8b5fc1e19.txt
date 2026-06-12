@@ -1,0 +1,8 @@
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\client\DicomPrintClientGui.pdb
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\client\D3DCompiler_47_cor3.dll
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\client\PenImc_cor3.dll
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\client\PresentationNative_cor3.dll
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\client\vcruntime140_cor3.dll
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\client\wpfgfx_cor3.dll
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\client\e_sqlite3.dll
+D:\fodicom\fo-dicom-ultimate-private\build\output\full\client\DicomPrintClientGui.exe

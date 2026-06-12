@@ -1,5 +1,6 @@
 using DicomPrintServer.Configuration;
 using DicomPrintServer.Services;
+using DicomPrintServer.Services.MWL;
 using DicomPrintServer.Workers;
 using FellowOakDicom;
 using FellowOakDicom.Imaging;
@@ -71,6 +72,25 @@ var host = Host.CreateDefaultBuilder(args)
         });
         services.AddSingleton<MultiPortManager>();
         services.AddSingleton<PdfSessionManager>();
+        services.AddSingleton<IConnectionTracker, ConnectionTracker>();
+
+        // ── MWL SCP (Modality Worklist) ──────────────────
+        services.AddSingleton<MWLMonitor>();
+        services.AddSingleton<WorklistSourceDB>();
+        services.AddSingleton<WorklistSourceFHIR>();
+        services.AddSingleton<WorklistSourceHL7>();
+        services.AddSingleton<WorklistSourceCSV>();
+        services.AddSingleton<IWorklistSource>(sp =>
+        {
+            var cfg = sp.GetRequiredService<IOptions<PrintServerConfig>>().Value;
+            return cfg.MWL.DataSource.ToUpperInvariant() switch
+            {
+                "FHIR" => sp.GetRequiredService<WorklistSourceFHIR>(),
+                "HL7" => sp.GetRequiredService<WorklistSourceHL7>(),
+                "CSV" => sp.GetRequiredService<WorklistSourceCSV>(),
+                _ => sp.GetRequiredService<WorklistSourceDB>()
+            };
+        });
         services.AddSingleton<PrintRepository>(sp =>
         {
             var repo = new PrintRepository(
@@ -78,6 +98,9 @@ var host = Host.CreateDefaultBuilder(args)
             repo.Initialize();
             return repo;
         });
+
+        // ── HisRis Client ──────────────────────────────────
+        services.AddSingleton<HisRisClient>();
 
         // ── Workers ──────────────────────────────────────
         services.AddHostedService<PrintServerWorker>();

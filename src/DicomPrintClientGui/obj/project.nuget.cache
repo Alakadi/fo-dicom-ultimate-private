@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "dgSpecHash": "r5hVsF3+zVehUIuccu0SFD2ETYMTuqAM5APoMxviTY3eawhBgnd2AnDAqzfx5cKGRUYXt1cx0fqYsmBSf7WwtQ==",
+  "success": true,
+  "projectFilePath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.data.sqlite\\8.0.0\\microsoft.data.sqlite.8.0.0.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.data.sqlite.core\\8.0.0\\microsoft.data.sqlite.core.8.0.0.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.0-rc.1.23419.4\\microsoft.net.illink.tasks.8.0.0-rc.1.23419.4.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\sqlitepclraw.bundle_e_sqlite3\\2.1.6\\sqlitepclraw.bundle_e_sqlite3.2.1.6.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\sqlitepclraw.core\\2.1.6\\sqlitepclraw.core.2.1.6.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\sqlitepclraw.lib.e_sqlite3\\2.1.6\\sqlitepclraw.lib.e_sqlite3.2.1.6.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\sqlitepclraw.provider.e_sqlite3\\2.1.6\\sqlitepclraw.provider.e_sqlite3.2.1.6.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\system.memory\\4.5.3\\system.memory.4.5.3.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\system.text.json\\8.0.5\\system.text.json.8.0.5.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\8.0.0-rc.1.23419.4\\microsoft.netcore.app.runtime.win-x64.8.0.0-rc.1.23419.4.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.0-rc.1.23420.5\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.0-rc.1.23420.5.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.0-rc.1.23421.29\\microsoft.aspnetcore.app.runtime.win-x64.8.0.0-rc.1.23421.29.nupkg.sha512"
+  ],
+  "logs": []
+}

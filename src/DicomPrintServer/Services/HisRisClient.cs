@@ -363,17 +363,4 @@ namespace DicomPrintServer.Services
             _http.Dispose();
         }
     }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // DTOs
-    // ══════════════════════════════════════════════════════════════════════════
-
-    public class PatientInfo
-    {
-        public string  PatientId   { get; set; } = "";
-        public string  PatientName { get; set; } = "";
-        public string? Phone       { get; set; }
-        public string? DateOfBirth { get; set; }
-        public string? Email       { get; set; }
-    }
 }

@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 echo ================================================
-echo   DICOM Print Server - Build Trial + Full
+echo   DICOM Print Server - Build All (6 outputs)
 echo ================================================
 echo.
 
@@ -10,16 +10,18 @@ set "ROOT=%~dp0.."
 set "OUT=%ROOT%\build\output"
 set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
-REM --- Stop any running instances that would lock the EXE ---
+REM --- Stop services and processes ---
 echo Stopping services and processes...
 sc stop "DicomPrintServer"      >nul 2>&1
 sc stop "DicomPrintServerTrial" >nul 2>&1
 sc stop "DICOM Print Server"    >nul 2>&1
 timeout /t 3 /nobreak >nul
-taskkill /f /t /im DicomPrintServer.exe  >nul 2>&1
+taskkill /f /t /im DicomPrintServer.exe   >nul 2>&1
 taskkill /f /t /im DicomPrintAdminGui.exe >nul 2>&1
-wmic process where "name='DicomPrintServer.exe'"  delete >nul 2>&1
+taskkill /f /t /im DicomPrintClientGui.exe >nul 2>&1
+wmic process where "name='DicomPrintServer.exe'"   delete >nul 2>&1
 wmic process where "name='DicomPrintAdminGui.exe'" delete >nul 2>&1
+wmic process where "name='DicomPrintClientGui.exe'" delete >nul 2>&1
 timeout /t 3 /nobreak >nul
 echo Done stopping.
 
@@ -27,27 +29,43 @@ REM --- Clean output folder ---
 if exist "%OUT%" rd /s /q "%OUT%"
 mkdir "%OUT%\trial\server"
 mkdir "%OUT%\trial\admin"
+mkdir "%OUT%\trial\client"
 mkdir "%OUT%\full\server"
 mkdir "%OUT%\full\admin"
+mkdir "%OUT%\full\client"
 mkdir "%OUT%\installers"
 
-echo [1/4] Building Server - TRIAL (8 hours)...
+echo [1/6] Building Server - TRIAL (8 hours)...
 dotnet publish "%ROOT%\src\DicomPrintServer\DicomPrintServer.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\server" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
-echo [2/4] Building Server - FULL...
+echo [2/6] Building Server - FULL...
 dotnet publish "%ROOT%\src\DicomPrintServer\DicomPrintServer.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "%OUT%\full\server" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
-echo [3/4] Building Admin GUI - TRIAL (8 hours)...
-dotnet publish "%ROOT%\src\DicomPrintAdminGui\DicomPrintAdminGui.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\admin" --nologo -v minimal
+echo Restoring Client GUI packages...
+dotnet restore "%ROOT%\src\DicomPrintClientGui\DicomPrintClientGui.csproj" --force --nologo
+echo.
+
+echo [3/6] Building Client GUI - TRIAL...
+dotnet publish "%ROOT%\src\DicomPrintClientGui\DicomPrintClientGui.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\client" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
-echo [4/4] Building Admin GUI - FULL...
+echo [4/6] Building Client GUI - FULL...
+dotnet publish "%ROOT%\src\DicomPrintClientGui\DicomPrintClientGui.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "%OUT%\full\client" --nologo -v minimal
+if %errorlevel% neq 0 goto :error
+echo     OK
+
+echo [5/6] Building Admin GUI - FULL (for reseller only)...
 dotnet publish "%ROOT%\src\DicomPrintAdminGui\DicomPrintAdminGui.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "%OUT%\full\admin" --nologo -v minimal
+if %errorlevel% neq 0 goto :error
+echo     OK
+
+echo [6/6] Building Admin GUI - TRIAL (for reseller only)...
+dotnet publish "%ROOT%\src\DicomPrintAdminGui\DicomPrintAdminGui.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\admin" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
@@ -67,19 +85,17 @@ if not exist "%ISCC%" (
     goto :done
 )
 
-echo Building: DCMP_Server_Trial_Setup.exe ...
-"%ISCC%" "%ROOT%\build\setup_server_trial.iss"
+REM --- Unified installers (server + client in one setup) ---
+echo Building: DicomPrintServer_Trial_Setup.exe (موحد - خدمة + لوحة تحكم) ...
+"%ISCC%" "%ROOT%\build\setup_dicomprint_trial.iss"
 if %errorlevel% neq 0 goto :error
 
-echo Building: DCMP_Server_Full_Setup.exe ...
-"%ISCC%" "%ROOT%\build\setup_server_full.iss"
+echo Building: DicomPrintServer_Full_Setup.exe (موحد - خدمة + لوحة تحكم) ...
+"%ISCC%" "%ROOT%\build\setup_dicomprint_full.iss"
 if %errorlevel% neq 0 goto :error
 
-echo Building: DCMP_Admin_Trial_Setup.exe ...
-"%ISCC%" "%ROOT%\build\setup_admin_trial.iss"
-if %errorlevel% neq 0 goto :error
-
-echo Building: DCMP_Admin_Full_Setup.exe ...
+REM --- Admin tool for reseller (separate, keep secret) ---
+echo Building: DCMP_Admin_Full_Setup.exe (للموزع فقط - سري) ...
 "%ISCC%" "%ROOT%\build\setup_admin_full.iss"
 if %errorlevel% neq 0 goto :error
 
@@ -89,13 +105,12 @@ echo ================================================
 echo   DONE! Output: build\output\installers\
 echo ================================================
 echo.
-echo   TRIAL (send BEFORE payment - expires 8 hours):
-echo     DCMP_Server_Trial_Setup.exe
-echo     DCMP_Admin_Trial_Setup.exe
+echo   للعميل (مثبت واحد يشمل الخدمة + لوحة التحكم):
+echo     DicomPrintServer_Trial_Setup.exe   - نسخة تجريبية 8 ساعات
+echo     DicomPrintServer_Full_Setup.exe    - نسخة كاملة
 echo.
-echo   FULL (send AFTER payment):
-echo     DCMP_Server_Full_Setup.exe
-echo     DCMP_Admin_Full_Setup.exe
+echo   للموزع فقط (سري - لا ترسله للعميل):
+echo     DCMP_Admin_Full_Setup.exe          - اداة توليد الرخص
 echo.
 pause
 exit /b 0

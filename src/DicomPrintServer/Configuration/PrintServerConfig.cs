@@ -10,6 +10,7 @@ namespace DicomPrintServer.Configuration
         public WhatsAppServerConfig? WhatsApp           { get; set; }
         public ImageHostingConfig    ImageHosting       { get; set; } = new();
         public HisRisConfig          HisRis             { get; set; } = new();
+        public MWLConfig             MWL                { get; set; } = new();
     }
 
     public class ListenerConfig
@@ -138,5 +139,75 @@ namespace DicomPrintServer.Configuration
         public string Hl7SendingFac     { get; set; } = "PRINTSERVER";
         public int      Hl7TimeoutSec   { get; set; } = 10;
         public string CsvFilePath       { get; set; } = "";
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // MWL SCP (Modality Worklist)
+    // ─────────────────────────────────────────────────────────────
+    public class MWLConfig
+    {
+        public bool   Enabled           { get; set; } = false;
+        public int    Port              { get; set; } = 8002;
+        public string AET               { get; set; } = "MWL_SCP";
+        public string DataSource        { get; set; } = "Database"; // Database|FHIR|HL7|CSV
+        public int    MaxResults        { get; set; } = 200;
+        public bool   RequireScheduledAET { get; set; } = false;
+        public string ScheduledAET      { get; set; } = "";
+        public int    QueryTimeoutSec   { get; set; } = 30;
+    }
+
+    /// <summary>
+    /// نموذج عنصر قائمة العمل (MWL) - يتوافق مع DICOM Modality Worklist Information Model
+    /// </summary>
+    public class WorklistItem
+    {
+        // Scheduled Procedure Step Module
+        public string ScheduledStationAET       { get; set; } = "";
+        public string ScheduledProcedureStepStartDate { get; set; } = "";
+        public string ScheduledProcedureStepStartTime { get; set; } = "";
+        public string ScheduledProcedureStepEndDate   { get; set; } = "";
+        public string ScheduledProcedureStepEndTime   { get; set; } = "";
+        public string ScheduledPerformingPhysicianName { get; set; } = "";
+        public string ScheduledProcedureStepDescription { get; set; } = "";
+        public string ScheduledProcedureStepID        { get; set; } = "";
+        public string ScheduledStationName            { get; set; } = "";
+        public string ScheduledProcedureStepLocation  { get; set; } = "";
+        public string ScheduledProtocolCodeSequence   { get; set; } = "";
+        public string ScheduledProcedureStepStatus    { get; set; } = "SCHEDULED"; // SCHEDULED|ARRIVED|READY|STARTED|COMPLETED|CANCELED|DISCONTINUED
+
+        // Requested Procedure Module
+        public string RequestedProcedureID       { get; set; } = "";
+        public string RequestedProcedureDescription { get; set; } = "";
+        public string RequestedProcedureCodeSequence { get; set; } = "";
+        public string StudyInstanceUID           { get; set; } = "";
+        public string ReferencedStudySequence    { get; set; } = "";
+        public string RequestedProcedurePriority { get; set; } = "";
+        public string PatientTransportArrangements { get; set; } = "";
+        public string ReferencedPatientSequence  { get; set; } = "";
+
+        // Imaging Service Request Module
+        public string AccessionNumber            { get; set; } = "";
+        public string ReferringPhysicianName     { get; set; } = "";
+        public string RequestingPhysician        { get; set; } = "";
+        public string RequestingService          { get; set; } = "";
+        public string ImagingServiceRequestComments { get; set; } = "";
+
+        // Patient Identification Module
+        public string PatientName                { get; set; } = "";
+        public string PatientID                  { get; set; } = "";
+        public string IssuerOfPatientID          { get; set; } = "";
+        public string OtherPatientIDs            { get; set; } = "";
+        public string PatientBirthDate           { get; set; } = "";
+        public string PatientSex                 { get; set; } = "";
+        public string PatientWeight              { get; set; } = "";
+        public string ConfidentialityConstraint  { get; set; } = "";
+        public string PatientAddress             { get; set; } = "";
+        public string PatientTelephoneNumbers    { get; set; } = "";
+        public string PatientComments            { get; set; } = "";
+
+        // Metadata
+        public string SourceAET                  { get; set; } = ""; // Which MWL SCP served this
+        public DateTime CreatedAt                { get; set; } = DateTime.UtcNow;
+        public DateTime UpdatedAt                { get; set; } = DateTime.UtcNow;
     }
 }

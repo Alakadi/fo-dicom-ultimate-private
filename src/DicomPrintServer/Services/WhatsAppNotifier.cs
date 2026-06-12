@@ -27,14 +27,17 @@ namespace DicomPrintServer.Services
         private readonly ILogger<WhatsAppNotifier> _logger;
         private readonly WhatsAppConfig _config;
         private readonly HttpClient _http;
+        private readonly ImageHostingService? _imageHosting;
         private bool _disposed;
 
         public WhatsAppNotifier(
             ILogger<WhatsAppNotifier> logger,
-            WhatsAppConfig config)
+            WhatsAppConfig config,
+            ImageHostingService? imageHosting = null)
         {
             _logger = logger;
             _config = config;
+            _imageHosting = imageHosting;
             _http   = new HttpClient
             {
                 Timeout = TimeSpan.FromSeconds(30)
@@ -53,6 +56,7 @@ namespace DicomPrintServer.Services
             string patientName,
             int pageCount,
             string? jpgFilePath = null,
+            PatientInfo? patientInfo = null,
             CancellationToken cancellationToken = default)
         {
             if (!_config.Enabled)
@@ -68,7 +72,7 @@ namespace DicomPrintServer.Services
             }
 
             string phone    = NormalizePhone(toPhoneNumber);
-            string message  = FormatMessage(_config.MessageTemplate, patientName, pageCount);
+            string message  = FormatMessage(_config.MessageTemplate, patientName, pageCount, patientInfo);
 
             _logger.LogInformation("Sending WhatsApp to {Phone} — Patient={Patient}",
                 phone, patientName);
@@ -145,13 +149,19 @@ namespace DicomPrintServer.Services
                 ["Body"] = message
             };
 
-            // إضافة MediaUrl إذا كان هناك صورة
-            if (imagePath != null && File.Exists(imagePath))
+            // إضافة MediaUrl إذا كان هناك صورة - استخدام ImageHostingService للحصول على URL عام
+            if (imagePath != null && File.Exists(imagePath) && _imageHosting != null)
             {
-                // في الإنتاج: ترفع الصورة إلى URL عام ثم تضيفها
-                // هنا: placeholder فقط
-                _logger.LogDebug("Twilio image attachment: {Path}", imagePath);
-                // form["MediaUrl"] = "<public-url-to-image>";
+                string? publicUrl = _imageHosting.AddImage(imagePath);
+                if (!string.IsNullOrEmpty(publicUrl))
+                {
+                    form["MediaUrl"] = publicUrl;
+                    _logger.LogDebug("Twilio image attachment via ImageHosting: {Url}", publicUrl);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to host image for Twilio: {Path}", imagePath);
+                }
             }
 
             var auth = Convert.ToBase64String(
@@ -269,13 +279,24 @@ namespace DicomPrintServer.Services
             return cleaned.ToString();
         }
 
-        private static string FormatMessage(string template, string patientName, int pages)
+        private static string FormatMessage(string template, string patientName, int pages, PatientInfo? patientInfo = null)
         {
-            return template
+            var msg = template
                 .Replace("{PatientName}", patientName)
                 .Replace("{PageCount}", pages.ToString())
                 .Replace("{DateTime}", DateTime.Now.ToString("yyyy-MM-dd HH:mm"))
                 .Replace("\\n", "\n");
+
+            if (patientInfo != null)
+            {
+                msg = msg
+                    .Replace("{PatientId}", patientInfo.PatientId ?? "")
+                    .Replace("{Phone}", patientInfo.Phone ?? "")
+                    .Replace("{DateOfBirth}", patientInfo.DateOfBirth ?? "")
+                    .Replace("{Email}", patientInfo.Email ?? "");
+            }
+
+            return msg;
         }
 
         /// <summary>
