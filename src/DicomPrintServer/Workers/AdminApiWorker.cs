@@ -228,6 +228,12 @@ namespace DicomPrintServer.Workers
                     return;
                 }
 
+                if (path == "/health")
+                {
+                    await WriteHtml(resp, BuildHealthHtml());
+                    return;
+                }
+
                 switch (path)
                 {
                     case "/api/health":
@@ -846,12 +852,14 @@ namespace DicomPrintServer.Workers
 
             <div class="nav-links">
                 <a href="/">🏠 الرئيسية</a>
-                <a href="/listeners">🔌 المنافذ (Listeners)</a>
+                <a href="/listeners">🔌 المنافذ</a>
+                <a href="/stats">📊 الإحصائيات</a>
+                <a href="/jobs">📋 المهام</a>
+                <a href="/printers">🖨️ الطابعات</a>
+                <a href="/mwl">📋 MWL</a>
+                <a href="/db/stats">🗄️ قاعدة البيانات</a>
+                <a href="/health">💚 حالة النظام</a>
                 <a href="/settings" class="active">⚙️ الإعدادات</a>
-                <a href="/api/stats" target="_blank">📊 الإحصائيات (API)</a>
-                <a href="/api/jobs" target="_blank">📋 المهام (API)</a>
-                <a href="/api/jobs/csv">📥 تصدير CSV</a>
-                <a href="/api/health" target="_blank">💚 حالة النظام</a>
             </div>
 
             """);
@@ -1237,12 +1245,14 @@ namespace DicomPrintServer.Workers
 
             <div class="nav-links">
                 <a href="/">🏠 الرئيسية</a>
-                <a href="/listeners" class="active">🔌 المنافذ (Listeners)</a>
+                <a href="/listeners" class="active">🔌 المنافذ</a>
+                <a href="/stats">📊 الإحصائيات</a>
+                <a href="/jobs">📋 المهام</a>
+                <a href="/printers">🖨️ الطابعات</a>
+                <a href="/mwl">📋 MWL</a>
+                <a href="/db/stats">🗄️ قاعدة البيانات</a>
+                <a href="/health">💚 حالة النظام</a>
                 <a href="/settings">⚙️ الإعدادات</a>
-                <a href="/api/stats" target="_blank">📊 الإحصائيات (API)</a>
-                <a href="/api/jobs" target="_blank">📋 المهام (API)</a>
-                <a href="/api/jobs/csv">📥 تصدير CSV</a>
-                <a href="/api/health" target="_blank">💚 حالة النظام</a>
             </div>
             """);
 
@@ -1522,21 +1532,10 @@ namespace DicomPrintServer.Workers
 
             // وقت التشغيل
             var uptime = TimeSpan.FromSeconds(g.UptimeSeconds);
-            sb.AppendLine($"<p class='uptime'>وقت التشغيل: {uptime:d\\.hh\\:mm\\:ss} | تاريخ التحديث: {DateTime.Now:yyyy-MM-dd HH:mm:ss}</p>");
+            sb.AppendLine($"<p class='uptime'>وقت التشغيل: {uptime.ToString(@"d\:hh\:mm\:ss")} | تاريخ التحديث: {DateTime.Now:yyyy-MM-dd HH:mm:ss}</p>");
 
             // روابط التنقل
-            sb.AppendLine("""
-                <div class="nav-links">
-                  <a href="/" class="active">🏠 الرئيسية</a>
-                  <a href="/listeners">🔌 المنافذ (Listeners)</a>
-                  <a href="/settings">⚙️ الإعدادات</a>
-                  <a href="/api/stats" target="_blank">📊 الإحصائيات (API)</a>
-                  <a href="/api/jobs" target="_blank">📋 المهام (API)</a>
-                  <a href="/api/jobs/csv">📥 تصدير CSV</a>
-                  <a href="/api/discovery" target="_blank">🔍 الاكتشاف (Discovery)</a>
-                  <a href="/api/health" target="_blank">💚 حالة النظام</a>
-                </div>
-                """);
+            sb.AppendLine(BuildNavHtml("/"));
 
             // بطاقات الإحصائيات
             sb.AppendLine("<div class='cards'>");
@@ -1887,6 +1886,816 @@ namespace DicomPrintServer.Workers
             resp.OutputStream.Close();
         }
 
+        // ══════════════════════════════════════════════════════════════════════
+        // صفحة /stats — إحصائيات الطباعة مع رسوم بيانية
+        // ══════════════════════════════════════════════════════════════════════
+
+        private string BuildStatsHtml()
+        {
+            var g     = _monitor.GetGlobalStats();
+            var ports = _monitor.GetAllPortStats();
+            var daily = _monitor.GetDailyReport()
+                .OrderByDescending(k => k.Key).Take(30).OrderBy(k => k.Key).ToList();
+
+            var uptime = TimeSpan.FromSeconds(g.UptimeSeconds);
+            double successRate = g.TotalReceived > 0
+                ? Math.Round(g.TotalSuccess * 100.0 / g.TotalReceived, 1) : 0;
+
+            // بيانات الرسم البياني
+            var chartLabels = System.Text.Json.JsonSerializer.Serialize(daily.Select(d => d.Key));
+            var chartReceived = System.Text.Json.JsonSerializer.Serialize(daily.Select(d => d.Value.Received));
+            var chartSuccess  = System.Text.Json.JsonSerializer.Serialize(daily.Select(d => d.Value.Success));
+            var chartFailed   = System.Text.Json.JsonSerializer.Serialize(daily.Select(d => d.Value.Failed));
+
+            var sb = new StringBuilder();
+            sb.AppendLine($$"""
+                <!DOCTYPE html>
+                <html lang="ar" dir="rtl">
+                <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>إحصائيات الطباعة — DICOM Print Server</title>
+                <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+                <style>
+                  * { box-sizing: border-box; margin: 0; padding: 0; }
+                  body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
+                  h1 { padding-bottom: 12px; margin-bottom: 20px; border-bottom: 1px solid #334155;
+                       background: linear-gradient(135deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+                  h2 { color: #7dd3fc; margin: 28px 0 14px; font-size: 1.1em; border-right: 3px solid #38bdf8; padding-right: 8px; }
+                  .nav-links { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; padding:12px; background:#1e293b; border-radius:8px; border:1px solid #334155; }
+                  .nav-links a { color:#94a3b8; text-decoration:none; font-size:.85em; padding:7px 13px; border-radius:6px; transition:all .2s; font-weight:500; }
+                  .nav-links a:hover { color:#38bdf8; background:#0f172a; }
+                  .nav-links a.active { color:#fff; background:linear-gradient(135deg,#0284c7,#4f46e5); }
+                  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:28px; }
+                  .kpi { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:20px 16px; text-align:center; position:relative; overflow:hidden; }
+                  .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--accent,#38bdf8); }
+                  .kpi .val { font-size:2.2em; font-weight:700; color:var(--accent,#38bdf8); }
+                  .kpi .lbl { font-size:.8em; color:#94a3b8; margin-top:4px; }
+                  .kpi .sub { font-size:.75em; color:#64748b; margin-top:2px; }
+                  .chart-card { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:20px; margin-bottom:24px; }
+                  .chart-card canvas { max-height:280px; }
+                  table { width:100%; border-collapse:collapse; background:#1e293b; border-radius:8px; overflow:hidden; border:1px solid #334155; }
+                  th { background:#334155; color:#94a3b8; padding:11px 14px; text-align:right; font-size:.85em; font-weight:600; }
+                  td { padding:9px 14px; border-bottom:1px solid #334155; font-size:.88em; color:#cbd5e1; }
+                  tr:last-child td { border-bottom:none; }
+                  tr:hover td { background:#0f172a; }
+                  .ok { color:#4ade80; } .fail { color:#f87171; }
+                  footer { margin-top:40px; color:#475569; font-size:.8em; text-align:center; }
+                  .uptime-bar { background:#1e293b; border:1px solid #334155; border-radius:8px; padding:12px 18px; margin-bottom:20px; color:#94a3b8; font-size:.88em; }
+                  .uptime-bar span { color:#38bdf8; font-weight:600; }
+                </style>
+                </head>
+                <body>
+                <h1>📊 إحصائيات الطباعة</h1>
+                """);
+
+            sb.AppendLine(BuildNavHtml("/stats"));
+
+            sb.AppendLine("<div class=\"uptime-bar\">" +
+                $"وقت التشغيل: <span>{uptime.ToString(@"d\:hh\:mm\:ss")}</span> &nbsp;|&nbsp; " +
+                $"آخر تحديث: <span>{DateTime.Now:yyyy-MM-dd HH:mm:ss}</span> &nbsp;|&nbsp; " +
+                $"معدل النجاح: <span style=\"color:{( successRate>=90?"#4ade80":successRate>=70?"#facc15":"#f87171")}\">{ successRate}%</span>" +
+                "</div>");
+
+
+            // KPI cards
+            sb.AppendLine("""<div class="kpi-grid">""");
+            sb.AppendLine($"""<div class="kpi" style="--accent:#38bdf8"><div class="val">{g.TotalReceived}</div><div class="lbl">مهام استُلمت</div></div>""");
+            sb.AppendLine($"""<div class="kpi" style="--accent:#4ade80"><div class="val">{g.TotalSuccess}</div><div class="lbl">نجحت</div><div class="sub">{successRate}%</div></div>""");
+            sb.AppendLine($"""<div class="kpi" style="--accent:#f87171"><div class="val">{g.TotalFailed}</div><div class="lbl">فشلت</div></div>""");
+            sb.AppendLine($"""<div class="kpi" style="--accent:#818cf8"><div class="val">{g.TotalPagesOK}</div><div class="lbl">صفحات OK</div></div>""");
+            sb.AppendLine($"""<div class="kpi" style="--accent:#fb923c"><div class="val">{g.TotalPagesFailed}</div><div class="lbl">صفحات فشلت</div></div>""");
+            sb.AppendLine($"""<div class="kpi" style="--accent:#34d399"><div class="val">{uptime.Days}د {uptime.Hours}س</div><div class="lbl">وقت التشغيل</div></div>""");
+            sb.AppendLine("</div>");
+
+            // رسم بياني يومي
+            if (daily.Any())
+            {
+                sb.AppendLine($$"""
+                    <div class="chart-card">
+                      <h2>📅 المهام اليومية — آخر {{daily.Count}} يوماً</h2>
+                      <canvas id="dailyChart"></canvas>
+                    </div>
+                    """);
+            }
+
+            // إحصائيات لكل منفذ
+            if (ports.Any())
+            {
+                sb.AppendLine("<h2>📡 إحصائيات المنافذ (AET)</h2>");
+                sb.AppendLine("<table><tr><th>AET</th><th>استُلم</th><th>نجح</th><th>فشل</th><th>صفحات</th><th>متوسط (ms)</th><th>معدل النجاح</th></tr>");
+                foreach (var (aet, ps) in ports.OrderBy(k => k.Key))
+                {
+                    double pRate = ps.Received > 0 ? Math.Round(ps.Success * 100.0 / ps.Received, 1) : 0;
+                    string rateColor = pRate >= 90 ? "#4ade80" : pRate >= 70 ? "#facc15" : "#f87171";
+                    sb.AppendLine($"<tr><td style='font-weight:600'>{EscHtml(aet)}</td><td>{ps.Received}</td>" +
+                                  $"<td class='ok'>{ps.Success}</td><td class='fail'>{ps.Failed}</td>" +
+                                  $"<td>{ps.TotalPages}</td><td>{ps.AverageDurationMs:N0}</td>" +
+                                  $"<td style='color:{rateColor};font-weight:600'>{pRate}%</td></tr>");
+                }
+                sb.AppendLine("</table>");
+            }
+
+            // جدول آخر 30 يوم
+            if (daily.Any())
+            {
+                sb.AppendLine("<h2>📅 سجل آخر 30 يوماً</h2>");
+                sb.AppendLine("<table><tr><th>التاريخ</th><th>استُلم</th><th>نجح</th><th>فشل</th><th>صفحات</th><th>معدل النجاح</th></tr>");
+                foreach (var (day, ds) in daily.AsEnumerable().Reverse())
+                {
+                    double dRate = ds.Received > 0 ? Math.Round(ds.Success * 100.0 / ds.Received, 1) : 0;
+                    sb.AppendLine($"<tr><td>{day}</td><td>{ds.Received}</td>" +
+                                  $"<td class='ok'>{ds.Success}</td><td class='fail'>{ds.Failed}</td>" +
+                                  $"<td>{ds.TotalPages}</td><td>{dRate}%</td></tr>");
+                }
+                sb.AppendLine("</table>");
+            }
+
+            // Chart.js script
+            if (daily.Any())
+            {
+                sb.AppendLine("<script>");
+                sb.AppendLine("(function() {");
+                sb.AppendLine("  var ctx = document.getElementById('dailyChart').getContext('2d');");
+                sb.AppendLine("  new Chart(ctx, {");
+                sb.AppendLine("    type: 'bar',");
+                sb.AppendLine("    data: {");
+                sb.AppendLine("      labels: " + chartLabels + ",");
+                sb.AppendLine("      datasets: [");
+                sb.AppendLine("        { label: '\u0627\u0633\u062a\u064f\u0644\u0645\u062a', data: " + chartReceived + ", backgroundColor: 'rgba(56,189,248,0.6)', borderColor: '#38bdf8', borderWidth:1 },");
+                sb.AppendLine("        { label: '\u0646\u062c\u062d\u062a',   data: " + chartSuccess  + ", backgroundColor: 'rgba(74,222,128,0.6)', borderColor: '#4ade80', borderWidth:1 },");
+                sb.AppendLine("        { label: '\u0641\u0634\u0644\u062a',   data: " + chartFailed   + ", backgroundColor: 'rgba(248,113,113,0.6)', borderColor: '#f87171', borderWidth:1 }");
+                sb.AppendLine("      ]");
+                sb.AppendLine("    },");
+                sb.AppendLine("    options: {");
+                sb.AppendLine("      responsive: true, maintainAspectRatio: true,");
+                sb.AppendLine("      plugins: { legend: { labels: { color: '#94a3b8' } } },");
+                sb.AppendLine("      scales: {");
+                sb.AppendLine("        x: { ticks: { color: '#64748b' }, grid: { color: '#1e293b' } },");
+                sb.AppendLine("        y: { ticks: { color: '#64748b' }, grid: { color: '#334155' }, beginAtZero: true }");
+                sb.AppendLine("      }");
+                sb.AppendLine("    }");
+                sb.AppendLine("  });");
+                sb.AppendLine("})();");
+                sb.AppendLine("</script>");
+            }
+
+            sb.AppendLine("<footer>DICOM Print Server — Stats Page</footer></body></html>");
+            return sb.ToString();
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // صفحة /jobs — سجل المهام مع بحث وفلترة وترقيم صفحات
+        // ══════════════════════════════════════════════════════════════════════
+
+        private string BuildJobsHtml(HttpListenerRequest req)
+        {
+            // قراءة معاملات البحث والفلترة
+            string search  = (req.QueryString["q"]      ?? "").Trim();
+            string filter  = (req.QueryString["filter"] ?? "all").ToLower(); // all | ok | fail
+            string aetFilter = (req.QueryString["aet"] ?? "").Trim();
+            if (!int.TryParse(req.QueryString["page"], out int page) || page < 1) page = 1;
+            const int pageSize = 50;
+
+            var allJobs = _monitor.GetRecentJobs(500).OrderByDescending(j => j.Timestamp).ToList();
+
+            // فلترة
+            var filtered = allJobs.AsEnumerable();
+            if (!string.IsNullOrEmpty(search))
+                filtered = filtered.Where(j => (j.PatientName ?? "").Contains(search, StringComparison.OrdinalIgnoreCase)
+                                            || j.AET.Contains(search, StringComparison.OrdinalIgnoreCase)
+                                            || j.JobId.Contains(search, StringComparison.OrdinalIgnoreCase));
+            if (filter == "ok")   filtered = filtered.Where(j => j.Success);
+            if (filter == "fail") filtered = filtered.Where(j => !j.Success);
+            if (!string.IsNullOrEmpty(aetFilter))
+                filtered = filtered.Where(j => j.AET.Equals(aetFilter, StringComparison.OrdinalIgnoreCase));
+
+            var filteredList = filtered.ToList();
+            int totalCount  = filteredList.Count;
+            int totalPages  = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+            page = Math.Min(page, totalPages);
+
+            var pageJobs = filteredList.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+            // قائمة AETs الفريدة للفلتر
+            var aets = allJobs.Select(j => j.AET).Distinct().OrderBy(x => x).ToList();
+
+            string QStr(string k, string v)
+            {
+                var qs = System.Web.HttpUtility.ParseQueryString("");
+                if (!string.IsNullOrEmpty(search))   qs["q"]      = search;
+                if (filter != "all")                  qs["filter"] = filter;
+                if (!string.IsNullOrEmpty(aetFilter)) qs["aet"]    = aetFilter;
+                qs[k] = v;
+                return "?" + qs;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine("""
+                <!DOCTYPE html>
+                <html lang="ar" dir="rtl">
+                <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>سجل المهام — DICOM Print Server</title>
+                <style>
+                  * { box-sizing:border-box; margin:0; padding:0; }
+                  body { font-family:'Segoe UI',Arial,sans-serif; background:#0f172a; color:#e2e8f0; padding:20px; }
+                  h1 { padding-bottom:12px; margin-bottom:20px; border-bottom:1px solid #334155;
+                       background:linear-gradient(135deg,#38bdf8,#818cf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+                  h2 { color:#7dd3fc; margin:24px 0 14px; font-size:1.05em; border-right:3px solid #38bdf8; padding-right:8px; }
+                  .nav-links { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; padding:12px; background:#1e293b; border-radius:8px; border:1px solid #334155; }
+                  .nav-links a { color:#94a3b8; text-decoration:none; font-size:.85em; padding:7px 13px; border-radius:6px; transition:all .2s; font-weight:500; }
+                  .nav-links a:hover { color:#38bdf8; background:#0f172a; }
+                  .nav-links a.active { color:#fff; background:linear-gradient(135deg,#0284c7,#4f46e5); }
+                  .toolbar { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:18px; padding:14px; background:#1e293b; border-radius:8px; border:1px solid #334155; }
+                  .toolbar input[type=text] { flex:1; min-width:180px; padding:8px 12px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:6px; font-size:.9em; }
+                  .toolbar input[type=text]:focus { border-color:#38bdf8; outline:none; }
+                  .toolbar select { padding:8px 12px; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:6px; font-size:.9em; }
+                  .toolbar button { padding:8px 18px; background:linear-gradient(135deg,#0284c7,#4f46e5); color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:.9em; font-weight:600; }
+                  .toolbar a.btn-csv { padding:8px 14px; background:#065f46; color:#6ee7b7; text-decoration:none; border-radius:6px; font-size:.85em; font-weight:600; border:1px solid #064e3b; }
+                  .info-bar { color:#64748b; font-size:.82em; margin-bottom:12px; }
+                  .info-bar span { color:#94a3b8; }
+                  table { width:100%; border-collapse:collapse; background:#1e293b; border-radius:8px; overflow:hidden; border:1px solid #334155; }
+                  th { background:#334155; color:#94a3b8; padding:11px 12px; text-align:right; font-size:.82em; font-weight:600; white-space:nowrap; }
+                  td { padding:8px 12px; border-bottom:1px solid #334155; font-size:.83em; color:#cbd5e1; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                  tr:last-child td { border-bottom:none; }
+                  tr:hover td { background:#0f172a; }
+                  .badge-ok { background:#14532d; color:#4ade80; border-radius:4px; padding:2px 8px; font-size:.78em; white-space:nowrap; }
+                  .badge-fail { background:#7f1d1d; color:#f87171; border-radius:4px; padding:2px 8px; font-size:.78em; white-space:nowrap; }
+                  .aet-badge { background:#1e3a8a; color:#93c5fd; border-radius:4px; padding:2px 8px; font-size:.78em; font-family:monospace; }
+                  .pagination { display:flex; gap:8px; justify-content:center; margin-top:20px; flex-wrap:wrap; }
+                  .pagination a, .pagination span { padding:7px 13px; border-radius:6px; text-decoration:none; font-size:.85em; font-weight:500; border:1px solid #334155; color:#94a3b8; background:#1e293b; }
+                  .pagination a:hover { border-color:#38bdf8; color:#38bdf8; }
+                  .pagination .current { background:linear-gradient(135deg,#0284c7,#4f46e5); color:#fff; border-color:#0284c7; }
+                  .no-data { text-align:center; padding:40px; color:#64748b; }
+                  footer { margin-top:40px; color:#475569; font-size:.8em; text-align:center; }
+                </style>
+                </head>
+                <body>
+                <h1>📋 سجل مهام الطباعة</h1>
+                """);
+
+            sb.AppendLine(BuildNavHtml("/jobs"));
+
+            // شريط البحث والفلترة
+            sb.AppendLine("<form method='get' action='/jobs'>");
+            sb.AppendLine("<div class='toolbar'>");
+            sb.AppendLine($"<input type='text' name='q' value='{EscHtml(search)}' placeholder='بحث: اسم مريض، AET، Job ID...'>");
+            sb.AppendLine($"<select name='filter'><option value='all'{(filter=="all"?" selected":"")}> الكل</option><option value='ok'{(filter=="ok"?" selected":"")}>✅ نجحت فقط</option><option value='fail'{(filter=="fail"?" selected":"")}>❌ فشلت فقط</option></select>");
+            sb.AppendLine("<select name='aet'><option value=''>كل المنافذ</option>");
+            foreach (var aet in aets)
+                sb.AppendLine($"<option value='{EscHtml(aet)}'{(aetFilter==aet?" selected":"")}>{EscHtml(aet)}</option>");
+            sb.AppendLine("</select>");
+            sb.AppendLine("<button type='submit'>🔍 بحث</button>");
+            sb.AppendLine($"<a class='btn-csv' href='/api/jobs/csv'>📥 تصدير CSV</a>");
+            sb.AppendLine("</div></form>");
+
+            // معلومات النتائج
+            sb.AppendLine($"<div class='info-bar'>إجمالي النتائج: <span>{totalCount}</span> مهمة &nbsp;|&nbsp; الصفحة <span>{page}</span> من <span>{totalPages}</span></div>");
+
+            if (!pageJobs.Any())
+            {
+                sb.AppendLine("<div class='no-data'>🔍 لا توجد مهام تطابق البحث.</div>");
+            }
+            else
+            {
+                sb.AppendLine("<table><tr><th>#</th><th>الوقت</th><th>AET</th><th>المريض</th><th>الصفحات</th><th>المدة (ms)</th><th>المسار</th><th>الحالة</th></tr>");
+                int rowNum = (page - 1) * pageSize + 1;
+                foreach (var j in pageJobs)
+                {
+                    string badge = j.Success
+                        ? "<span class='badge-ok'>✅ نجح</span>"
+                        : $"<span class='badge-fail'>❌ {EscHtml(j.ErrorMessage ?? "خطأ")}</span>";
+                    string path = j.OutputPath != null
+                        ? $"<span title='{EscHtml(j.OutputPath)}' style='font-family:monospace;font-size:.78em'>{EscHtml(System.IO.Path.GetFileName(j.OutputPath))}</span>"
+                        : "—";
+                    sb.AppendLine($"<tr><td style='color:#64748b'>{rowNum++}</td>" +
+                                  $"<td style='white-space:nowrap'>{j.Timestamp.ToLocalTime():yyyy-MM-dd HH:mm:ss}</td>" +
+                                  $"<td><span class='aet-badge'>{EscHtml(j.AET)}</span></td>" +
+                                  $"<td>{EscHtml(j.PatientName ?? "—")}</td>" +
+                                  $"<td style='text-align:center'>{j.PageCount}</td>" +
+                                  $"<td style='text-align:center'>{j.Duration.TotalMilliseconds:N0}</td>" +
+                                  $"<td title='{EscHtml(j.OutputPath ?? "")}'>{path}</td>" +
+                                  $"<td>{badge}</td></tr>");
+                }
+                sb.AppendLine("</table>");
+
+                // ترقيم الصفحات
+                if (totalPages > 1)
+                {
+                    sb.AppendLine("<div class='pagination'>");
+                    if (page > 1) sb.AppendLine($"<a href='/jobs{QStr("page", (page-1).ToString())}'>&#8594; السابق</a>");
+                    for (int p2 = Math.Max(1, page - 3); p2 <= Math.Min(totalPages, page + 3); p2++)
+                    {
+                        if (p2 == page)
+                            sb.AppendLine($"<span class='current'>{p2}</span>");
+                        else
+                            sb.AppendLine($"<a href='/jobs{QStr("page", p2.ToString())}'>{p2}</a>");
+                    }
+                    if (page < totalPages) sb.AppendLine($"<a href='/jobs{QStr("page", (page+1).ToString())}'>التالي &#8592;</a>");
+                    sb.AppendLine("</div>");
+                }
+            }
+
+            sb.AppendLine("<footer>DICOM Print Server — Jobs Log</footer></body></html>");
+            return sb.ToString();
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // صفحة /printers — حالة الطابعات المثبتة
+        // ══════════════════════════════════════════════════════════════════════
+
+        private string BuildPrintersHtml()
+        {
+            var printers = PrinterDiscovery.GetInstalledPrinters();
+            var defaultP = PrinterDiscovery.GetDefaultPrinter();
+
+            // استخراج الطابعات المستخدمة في الـ listeners
+            var root = LoadConfig();
+            var ps   = root["PrintServer"];
+            var listeners = ps?["Listeners"] as System.Text.Json.Nodes.JsonArray ?? new System.Text.Json.Nodes.JsonArray();
+            var usedPrinters = listeners
+                .Where(x => GetVal<bool>(x, "PrintToWindowsPrinter", false))
+                .Select(x => GetVal<string>(x, "WindowsPrinterName", ""))
+                .Where(x => !string.IsNullOrEmpty(x))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            var sb = new StringBuilder();
+            sb.AppendLine("""
+                <!DOCTYPE html>
+                <html lang="ar" dir="rtl">
+                <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>إدارة الطابعات — DICOM Print Server</title>
+                <style>
+                  * { box-sizing:border-box; margin:0; padding:0; }
+                  body { font-family:'Segoe UI',Arial,sans-serif; background:#0f172a; color:#e2e8f0; padding:20px; }
+                  h1 { padding-bottom:12px; margin-bottom:20px; border-bottom:1px solid #334155;
+                       background:linear-gradient(135deg,#38bdf8,#818cf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+                  h2 { color:#7dd3fc; margin:24px 0 14px; font-size:1.05em; border-right:3px solid #38bdf8; padding-right:8px; }
+                  .nav-links { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; padding:12px; background:#1e293b; border-radius:8px; border:1px solid #334155; }
+                  .nav-links a { color:#94a3b8; text-decoration:none; font-size:.85em; padding:7px 13px; border-radius:6px; transition:all .2s; font-weight:500; }
+                  .nav-links a:hover { color:#38bdf8; background:#0f172a; }
+                  .nav-links a.active { color:#fff; background:linear-gradient(135deg,#0284c7,#4f46e5); }
+                  .printer-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; margin-bottom:28px; }
+                  .printer-card { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:18px; position:relative; transition:transform .2s; }
+                  .printer-card:hover { transform:translateY(-2px); border-color:#475569; }
+                  .printer-card.is-default { border-color:#38bdf8; }
+                  .printer-card.is-used { border-color:#4ade80; }
+                  .printer-icon { font-size:2em; margin-bottom:8px; }
+                  .printer-name { font-weight:600; font-size:.95em; color:#e2e8f0; margin-bottom:8px; word-break:break-word; }
+                  .tag { display:inline-block; padding:2px 10px; border-radius:12px; font-size:.75em; font-weight:600; margin-left:6px; margin-bottom:4px; }
+                  .tag-default { background:#1e3a8a; color:#93c5fd; }
+                  .tag-used { background:#064e3b; color:#6ee7b7; }
+                  .tag-unused { background:#1e293b; color:#64748b; border:1px solid #334155; }
+                  .aet-list { margin-top:10px; font-size:.8em; color:#64748b; }
+                  .aet-list span { color:#38bdf8; font-family:monospace; }
+                  .info-card { background:#1e293b; border:1px solid #334155; border-radius:8px; padding:14px 18px; margin-bottom:20px; font-size:.88em; color:#94a3b8; }
+                  .info-card strong { color:#e2e8f0; }
+                  .no-printers { text-align:center; padding:40px; color:#64748b; }
+                  footer { margin-top:40px; color:#475569; font-size:.8em; text-align:center; }
+                  table { width:100%; border-collapse:collapse; background:#1e293b; border-radius:8px; overflow:hidden; border:1px solid #334155; }
+                  th { background:#334155; color:#94a3b8; padding:10px 14px; text-align:right; font-size:.85em; font-weight:600; }
+                  td { padding:9px 14px; border-bottom:1px solid #334155; font-size:.88em; color:#cbd5e1; }
+                  tr:last-child td { border-bottom:none; }
+                </style>
+                </head>
+                <body>
+                <h1>🖨️ إدارة الطابعات</h1>
+                """);
+
+            sb.AppendLine(BuildNavHtml("/printers"));
+
+            sb.AppendLine($"""
+                <div class="info-card">
+                  الطابعة الافتراضية: <strong>{EscHtml(defaultP ?? "غير محددة")}</strong> &nbsp;|&nbsp;
+                  إجمالي الطابعات المثبتة: <strong>{printers.Count}</strong> &nbsp;|&nbsp;
+                  مستخدمة في منفذ: <strong>{usedPrinters.Count}</strong>
+                </div>
+                """);
+
+            if (!printers.Any())
+            {
+                sb.AppendLine("<div class='no-printers'>⚠️ لا توجد طابعات مثبتة على هذا الجهاز.</div>");
+            }
+            else
+            {
+                sb.AppendLine("<h2>🖨️ الطابعات المثبتة</h2>");
+                sb.AppendLine("<div class='printer-grid'>");
+                foreach (var printer in printers.OrderBy(p => p))
+                {
+                    bool isDefault = printer == defaultP;
+                    bool isUsed    = usedPrinters.Contains(printer);
+                    string cardClass = isDefault ? "printer-card is-default" : isUsed ? "printer-card is-used" : "printer-card";
+
+                    // أي AETs تستخدم هذه الطابعة؟
+                    var usingAets = listeners
+                        .Where(x => GetVal<bool>(x, "PrintToWindowsPrinter", false) &&
+                               GetVal<string>(x, "WindowsPrinterName", "").Equals(printer, StringComparison.OrdinalIgnoreCase))
+                        .Select(x => GetVal<string>(x, "AET", ""))
+                        .Where(x => !string.IsNullOrEmpty(x))
+                        .ToList();
+
+                    sb.AppendLine($"<div class='{cardClass}'>");
+                    sb.AppendLine($"<div class='printer-icon'>🖨️</div>");
+                    sb.AppendLine($"<div class='printer-name'>{EscHtml(printer)}</div>");
+                    if (isDefault) sb.AppendLine("<span class='tag tag-default'>★ الافتراضية</span>");
+                    if (isUsed)    sb.AppendLine("<span class='tag tag-used'>✅ مستخدمة</span>");
+                    else           sb.AppendLine("<span class='tag tag-unused'>غير مستخدمة</span>");
+                    if (usingAets.Any())
+                        sb.AppendLine($"<div class='aet-list'>المنافذ: {string.Join(", ", usingAets.Select(a => $"<span>{EscHtml(a)}</span>"))}</div>");
+                    sb.AppendLine("</div>");
+                }
+                sb.AppendLine("</div>");
+            }
+
+            // جدول ربط المنافذ بالطابعات
+            if (listeners.Count > 0)
+            {
+                sb.AppendLine("<h2>🔌 ربط المنافذ بالطابعات</h2>");
+                sb.AppendLine("<table><tr><th>AET</th><th>المنفذ</th><th>الطابعة</th><th>حفظ JPG</th><th>حفظ PDF</th><th>مجلد الحفظ</th></tr>");
+                for (int i = 0; i < listeners.Count; i++)
+                {
+                    var L = listeners[i];
+                    bool printToW = GetVal<bool>(L, "PrintToWindowsPrinter", true);
+                    string printerCell = printToW
+                        ? $"<span style='color:#93c5fd;font-family:monospace'>{EscHtml(GetVal<string>(L, "WindowsPrinterName", ""))}</span>"
+                        : "<span style='color:#64748b'>تصدير رقمي فقط</span>";
+                    string jpg = GetVal<bool>(L, "SaveJpg", true)  ? "✅" : "—";
+                    string pdf = GetVal<bool>(L, "SavePdf", false) ? "✅" : "—";
+                    sb.AppendLine($"<tr><td style='font-weight:600;font-family:monospace;color:#38bdf8'>{EscHtml(GetVal<string>(L,"AET",""))}</td>" +
+                                  $"<td>{GetVal<int>(L,"Port",0)}</td><td>{printerCell}</td>" +
+                                  $"<td style='text-align:center'>{jpg}</td><td style='text-align:center'>{pdf}</td>" +
+                                  $"<td style='font-size:.8em;font-family:monospace'>{EscHtml(GetVal<string>(L,"OutputFolder",""))}</td></tr>");
+                }
+                sb.AppendLine("</table>");
+            }
+
+            sb.AppendLine("<footer>DICOM Print Server — Printers Page</footer></body></html>");
+            return sb.ToString();
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // صفحة /mwl — قائمة MWL مع بحث وجدول
+        // ══════════════════════════════════════════════════════════════════════
+
+        private string BuildMwlHtml()
+        {
+            var mwlStats   = _mwlMonitor.GetGlobalStats();
+            var byAE       = _mwlMonitor.GetAllQueryStats();
+            var recentQ    = _mwlMonitor.GetRecentQueries(100).OrderByDescending(q => q.Timestamp).ToList();
+
+            var sb = new StringBuilder();
+            sb.AppendLine("""
+                <!DOCTYPE html>
+                <html lang="ar" dir="rtl">
+                <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>MWL — DICOM Print Server</title>
+                <style>
+                  * { box-sizing:border-box; margin:0; padding:0; }
+                  body { font-family:'Segoe UI',Arial,sans-serif; background:#0f172a; color:#e2e8f0; padding:20px; }
+                  h1 { padding-bottom:12px; margin-bottom:20px; border-bottom:1px solid #334155;
+                       background:linear-gradient(135deg,#38bdf8,#818cf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+                  h2 { color:#7dd3fc; margin:24px 0 14px; font-size:1.05em; border-right:3px solid #38bdf8; padding-right:8px; }
+                  .nav-links { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; padding:12px; background:#1e293b; border-radius:8px; border:1px solid #334155; }
+                  .nav-links a { color:#94a3b8; text-decoration:none; font-size:.85em; padding:7px 13px; border-radius:6px; transition:all .2s; font-weight:500; }
+                  .nav-links a:hover { color:#38bdf8; background:#0f172a; }
+                  .nav-links a.active { color:#fff; background:linear-gradient(135deg,#0284c7,#4f46e5); }
+                  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:14px; margin-bottom:24px; }
+                  .kpi { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:18px 14px; text-align:center; position:relative; overflow:hidden; }
+                  .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--accent,#38bdf8); }
+                  .kpi .val { font-size:2em; font-weight:700; color:var(--accent,#38bdf8); }
+                  .kpi .lbl { font-size:.78em; color:#94a3b8; margin-top:4px; }
+                  .status-card { background:#1e293b; border:1px solid #334155; border-radius:8px; padding:14px 18px; margin-bottom:20px; }
+                  .status-row { display:flex; gap:24px; flex-wrap:wrap; }
+                  .status-item { font-size:.88em; color:#94a3b8; }
+                  .status-item strong { color:#e2e8f0; }
+                  .status-enabled { color:#4ade80; font-weight:700; }
+                  .status-disabled { color:#f87171; font-weight:700; }
+                  .search-box { margin-bottom:16px; }
+                  .search-box input { width:100%; max-width:400px; padding:9px 14px; background:#1e293b; color:#e2e8f0; border:1px solid #334155; border-radius:6px; font-size:.9em; }
+                  .search-box input:focus { border-color:#38bdf8; outline:none; }
+                  table { width:100%; border-collapse:collapse; background:#1e293b; border-radius:8px; overflow:hidden; border:1px solid #334155; margin-bottom:24px; }
+                  th { background:#334155; color:#94a3b8; padding:10px 12px; text-align:right; font-size:.82em; font-weight:600; white-space:nowrap; }
+                  td { padding:8px 12px; border-bottom:1px solid #334155; font-size:.84em; color:#cbd5e1; }
+                  tr:last-child td { border-bottom:none; }
+                  tr:hover td { background:#0f172a; }
+                  .badge-ok { background:#14532d; color:#4ade80; border-radius:4px; padding:2px 8px; font-size:.78em; }
+                  .badge-fail { background:#7f1d1d; color:#f87171; border-radius:4px; padding:2px 8px; font-size:.78em; }
+                  .aet-badge { background:#1e3a8a; color:#93c5fd; border-radius:4px; padding:2px 8px; font-size:.78em; font-family:monospace; }
+                  .no-data { text-align:center; padding:40px; color:#64748b; }
+                  footer { margin-top:40px; color:#475569; font-size:.8em; text-align:center; }
+                </style>
+                </head>
+                <body>
+                <h1>📋 Modality Worklist (MWL)</h1>
+                """);
+
+            sb.AppendLine(BuildNavHtml("/mwl"));
+
+            // حالة MWL SCP
+            string statusStr = _mwlConfig.Enabled
+                ? "<span class='status-enabled'>مفعّل ✅</span>"
+                : "<span class='status-disabled'>معطّل ❌</span>";
+            sb.AppendLine($"""
+                <div class="status-card">
+                  <div class="status-row">
+                    <div class="status-item">الحالة: {statusStr}</div>
+                    <div class="status-item">المنفذ: <strong>{_mwlConfig.Port}</strong></div>
+                    <div class="status-item">AET: <strong style='font-family:monospace;color:#38bdf8'>{EscHtml(_mwlConfig.AET)}</strong></div>
+                    <div class="status-item">مصدر البيانات: <strong>{EscHtml(_mwlConfig.DataSource)}</strong></div>
+                    <div class="status-item">حد النتائج: <strong>{_mwlConfig.MaxResults}</strong></div>
+                  </div>
+                </div>
+                """);
+
+            // KPIs
+            sb.AppendLine("<div class='kpi-grid'>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#38bdf8'><div class='val'>{mwlStats.TotalQueries}</div><div class='lbl'>إجمالي الاستعلامات</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#4ade80'><div class='val'>{mwlStats.TotalResultsReturned}</div><div class='lbl'>نتائج مُرجَعة</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#f87171'><div class='val'>{mwlStats.TotalQueryErrors}</div><div class='lbl'>أخطاء</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#818cf8'><div class='val'>{mwlStats.TotalAssociationsAccepted}</div><div class='lbl'>اتصالات مقبولة</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#fb923c'><div class='val'>{mwlStats.TotalAssociationsRejected}</div><div class='lbl'>اتصالات مرفوضة</div></div>");
+            sb.AppendLine("</div>");
+
+            // إحصائيات حسب AET
+            if (byAE.Any())
+            {
+                sb.AppendLine("<h2>📊 إحصائيات حسب AET</h2>");
+                sb.AppendLine("<table><tr><th>AET</th><th>الاستعلامات</th><th>النتائج</th><th>الأخطاء</th><th>متوسط (ms)</th></tr>");
+                foreach (var (ae, qs) in byAE.OrderBy(k => k.Key))
+                {
+                    sb.AppendLine($"<tr><td><span class='aet-badge'>{EscHtml(ae)}</span></td>" +
+                                  $"<td>{qs.QueryCount}</td><td>{qs.TotalResults}</td>" +
+                                  $"<td style='color:#f87171'>{qs.ErrorCount}</td>" +
+                                  $"<td>{qs.AverageDurationMs:N0}</td></tr>");
+                }
+                sb.AppendLine("</table>");
+            }
+
+            // آخر الاستعلامات مع بحث
+            sb.AppendLine("<h2>🔍 آخر الاستعلامات</h2>");
+
+            if (!recentQ.Any())
+            {
+                sb.AppendLine("<div class='no-data'>لا توجد استعلامات مسجّلة حتى الآن.</div>");
+            }
+            else
+            {
+                sb.AppendLine("""
+                    <div class="search-box">
+                      <input type="text" id="mwlSearch" placeholder="بحث: اسم مريض، AET، رقم مريض..." oninput="filterMwl()">
+                    </div>
+                    """);
+                sb.AppendLine("<table><thead><tr><th>الوقت</th><th>AET</th><th>اسم المريض</th><th>رقم المريض</th><th>النتائج</th><th>المدة (ms)</th><th>الحالة</th></tr></thead><tbody id='mwlBody'>");
+                foreach (var q in recentQ)
+                {
+                    string qBadge = q.Success
+                        ? "<span class='badge-ok'>✅ نجح</span>"
+                        : $"<span class='badge-fail'>❌ {EscHtml(q.ErrorMessage ?? "خطأ")}</span>";
+                    sb.AppendLine($"<tr><td style='white-space:nowrap'>{q.Timestamp.ToLocalTime():HH:mm:ss}</td>" +
+                                  $"<td><span class='aet-badge'>{EscHtml(q.CallingAE)}</span></td>" +
+                                  $"<td>{EscHtml(q.PatientName)}</td>" +
+                                  $"<td>{EscHtml(q.PatientID)}</td>" +
+                                  $"<td style='text-align:center'>{q.ResultCount}</td>" +
+                                  $"<td>{q.Duration.TotalMilliseconds:N0}</td>" +
+                                  $"<td>{qBadge}</td></tr>");
+                }
+                sb.AppendLine("</tbody></table>");
+                sb.AppendLine("""
+                    <script>
+                    function filterMwl() {
+                        var val = document.getElementById('mwlSearch').value.toLowerCase();
+                        var rows = document.querySelectorAll('#mwlBody tr');
+                        rows.forEach(function(row) {
+                            row.style.display = row.textContent.toLowerCase().includes(val) ? '' : 'none';
+                        });
+                    }
+                    </script>
+                    """);
+            }
+
+            sb.AppendLine("<footer>DICOM Print Server — MWL Page</footer></body></html>");
+            return sb.ToString();
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // مساعد: شريط التنقل المشترك بين جميع الصفحات
+        // ══════════════════════════════════════════════════════════════════════
+
+        private static string BuildNavHtml(string activePath)
+        {
+            var links = new[]
+            {
+                ("/",          "🏠 الرئيسية"),
+                ("/listeners", "🔌 المنافذ"),
+                ("/stats",     "📊 الإحصائيات"),
+                ("/jobs",      "📋 المهام"),
+                ("/printers",  "🖨️ الطابعات"),
+                ("/mwl",       "📋 MWL"),
+                ("/db/stats",  "🗄️ قاعدة البيانات"),
+                ("/health",    "💚 حالة النظام"),
+                ("/settings",  "⚙️ الإعدادات"),
+            };
+            var sb = new StringBuilder();
+            sb.AppendLine("<div class='nav-links'>");
+            foreach (var (path, label) in links)
+            {
+                string cls = path == activePath ? " class='active'" : "";
+                sb.AppendLine($"<a href='{path}'{cls}>{label}</a>");
+            }
+            sb.AppendLine("</div>");
+            return sb.ToString();
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // صفحة /health — حالة النظام
+        // ══════════════════════════════════════════════════════════════════════
+
+        private string BuildHealthHtml()
+        {
+            var g      = _monitor.GetGlobalStats();
+            var uptime = TimeSpan.FromSeconds(g.UptimeSeconds);
+            var ports  = _multiPortManager.GetListenerStatuses();
+            var conns  = _connectionTracker.GetActiveConnections().ToList();
+            var mwl    = _mwlMonitor.GetGlobalStats();
+
+            double successRate = g.TotalReceived > 0
+                ? Math.Round(g.TotalSuccess * 100.0 / g.TotalReceived, 1) : 100;
+            string overallStatus = g.TotalFailed == 0 ? "جيد تمام" : successRate >= 90 ? "جيد" : successRate >= 70 ? "تحذير" : "خطأ";
+            string statusColor   = g.TotalFailed == 0 ? "#4ade80" : successRate >= 90 ? "#4ade80" : successRate >= 70 ? "#facc15" : "#f87171";
+
+            var sb = new StringBuilder();
+            sb.AppendLine("""
+                <!DOCTYPE html>
+                <html lang="ar" dir="rtl">
+                <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <meta http-equiv="refresh" content="10">
+                <title>حالة النظام — DICOM Print Server</title>
+                <style>
+                  * { box-sizing:border-box; margin:0; padding:0; }
+                  body { font-family:'Segoe UI',Arial,sans-serif; background:#0f172a; color:#e2e8f0; padding:20px; }
+                  h1 { padding-bottom:12px; margin-bottom:20px; border-bottom:1px solid #334155;
+                       background:linear-gradient(135deg,#38bdf8,#818cf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+                  h2 { color:#7dd3fc; margin:24px 0 14px; font-size:1.05em; border-right:3px solid #38bdf8; padding-right:8px; }
+                  .nav-links { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; padding:12px; background:#1e293b; border-radius:8px; border:1px solid #334155; }
+                  .nav-links a { color:#94a3b8; text-decoration:none; font-size:.85em; padding:7px 13px; border-radius:6px; transition:all .2s; font-weight:500; }
+                  .nav-links a:hover { color:#38bdf8; background:#0f172a; }
+                  .nav-links a.active { color:#fff; background:linear-gradient(135deg,#0284c7,#4f46e5); }
+                  .overall-banner { border-radius:12px; padding:22px 28px; margin-bottom:24px;
+                    display:flex; align-items:center; gap:20px;
+                    background:linear-gradient(135deg,#1e293b,#0f172a); border:1px solid #334155; }
+                  .status-dot { width:18px; height:18px; border-radius:50%; flex-shrink:0;
+                    box-shadow:0 0 12px var(--sc); animation:pulse 1.5s infinite; }
+                  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+                  .status-label { font-size:1.4em; font-weight:700; }
+                  .status-sub { color:#94a3b8; font-size:.85em; margin-top:4px; }
+                  .auto-refresh { color:#64748b; font-size:.78em; margin-right:auto; }
+                  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:24px; }
+                  .kpi { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:18px 14px; text-align:center; position:relative; overflow:hidden; }
+                  .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--accent,#38bdf8); }
+                  .kpi .val { font-size:2em; font-weight:700; color:var(--accent,#38bdf8); }
+                  .kpi .lbl { font-size:.78em; color:#94a3b8; margin-top:4px; }
+                  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px; }
+                  @media(max-width:700px) { .grid2 { grid-template-columns:1fr; } }
+                  .section-card { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:18px; }
+                  .section-card h3 { color:#7dd3fc; font-size:.95em; margin-bottom:12px; border-right:2px solid #38bdf8; padding-right:8px; }
+                  .row-item { display:flex; justify-content:space-between; align-items:center;
+                    padding:7px 0; border-bottom:1px solid #1e293b; font-size:.86em; color:#94a3b8; }
+                  .row-item:last-child { border-bottom:none; }
+                  .row-item .key { color:#cbd5e1; }
+                  .row-item .val-sm { font-family:monospace; color:#38bdf8; }
+                  .badge { border-radius:4px; padding:2px 8px; font-size:.76em; font-weight:700; }
+                  .badge-ok { background:#14532d; color:#4ade80; }
+                  .badge-warn { background:#713f12; color:#fbbf24; }
+                  .badge-fail { background:#7f1d1d; color:#f87171; }
+                  .badge-off { background:#1e293b; color:#64748b; border:1px solid #334155; }
+                  .port-table { width:100%; border-collapse:collapse; margin-top:8px; }
+                  .port-table th { background:#334155; color:#94a3b8; padding:8px 10px; text-align:right; font-size:.78em; }
+                  .port-table td { padding:7px 10px; border-bottom:1px solid #334155; font-size:.82em; color:#cbd5e1; }
+                  .port-table tr:last-child td { border-bottom:none; }
+                  .conn-list { margin-top:8px; }
+                  .conn-item { padding:7px 10px; border-bottom:1px solid #334155; font-size:.82em; display:flex; gap:12px; flex-wrap:wrap; color:#94a3b8; }
+                  .conn-item:last-child { border-bottom:none; }
+                  .conn-item span { color:#e2e8f0; }
+                  footer { margin-top:40px; color:#475569; font-size:.8em; text-align:center; }
+                  .no-data { color:#64748b; text-align:center; padding:16px; font-size:.86em; }
+                </style>
+                </head>
+                <body>
+                <h1>💚 حالة النظام</h1>
+                """);
+
+            sb.AppendLine(BuildNavHtml("/health"));
+
+            // بانر الحالة العامة
+            sb.AppendLine($"""
+                <div class="overall-banner">
+                  <div class="status-dot" style="--sc:{statusColor}; background:{statusColor};"></div>
+                  <div>
+                    <div class="status-label" style="color:{statusColor}">{overallStatus}</div>
+                    <div class="status-sub">وقت التشغيل: {uptime:d\.hh\:mm\:ss} &nbsp;|&nbsp; آخر تحديث: {DateTime.Now:HH:mm:ss}</div>
+                  </div>
+                  <div class="auto-refresh">↻ تحديث تلقائي كل 10 ثوانٍ</div>
+                </div>
+                """);
+
+            // KPIs
+            sb.AppendLine("<div class='kpi-grid'>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#38bdf8'><div class='val'>{g.TotalReceived}</div><div class='lbl'>مهام استُلمت</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#4ade80'><div class='val'>{g.TotalSuccess}</div><div class='lbl'>نجحت</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#f87171'><div class='val'>{g.TotalFailed}</div><div class='lbl'>فشلت</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#818cf8'><div class='val'>{g.TotalPagesOK}</div><div class='lbl'>صفحات OK</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#34d399'><div class='val'>{successRate}%</div><div class='lbl'>معدل النجاح</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#fb923c'><div class='val'>{conns.Count}</div><div class='lbl'>متصل الآن</div></div>");
+            sb.AppendLine("</div>");
+
+            // grid: معلومات النظام + MWL
+            sb.AppendLine("<div class='grid2'>");
+
+            // بطاقة النظام
+            sb.AppendLine("<div class=\"section-card\">");
+            sb.AppendLine("  <h3>🖥️ معلومات النظام</h3>");
+            sb.AppendLine($"  <div class=\"row-item\"><span class=\"key\">اسم الجهاز</span><span class=\"val-sm\">{EscHtml(Environment.MachineName)}</span></div>");
+            sb.AppendLine($"  <div class=\"row-item\"><span class=\"key\">نظام التشغيل</span><span class=\"val-sm\">{EscHtml(Environment.OSVersion.VersionString)}</span></div>");
+            sb.AppendLine($"  <div class=\"row-item\"><span class=\"key\">إصدار .NET</span><span class=\"val-sm\">{EscHtml(Environment.Version.ToString())}</span></div>");
+            sb.AppendLine($"  <div class=\"row-item\"><span class=\"key\">وقت التشغيل</span><span class=\"val-sm\">{uptime.ToString(@"d\:hh\:mm\:ss")}</span></div>");
+            sb.AppendLine($"  <div class=\"row-item\"><span class=\"key\">الذاكرة المستخدمة</span><span class=\"val-sm\">{GC.GetTotalMemory(false) / 1024 / 1024} MB</span></div>");
+            sb.AppendLine($"  <div class=\"row-item\"><span class=\"key\">Managed Threads</span><span class=\"val-sm\">{System.Diagnostics.Process.GetCurrentProcess().Threads.Count}</span></div>");
+            sb.AppendLine("</div>");
+
+            // بطاقة MWL
+            string mwlBadge = _mwlConfig.Enabled
+                ? "<span class='badge badge-ok'>مفعّل</span>"
+                : "<span class='badge badge-off'>معطّل</span>";
+            sb.AppendLine($"""
+                <div class="section-card">
+                  <h3>📋 MWL SCP</h3>
+                  <div class="row-item"><span class="key">الحالة</span>{mwlBadge}</div>
+                  <div class="row-item"><span class="key">المنفذ</span><span class="val-sm">{_mwlConfig.Port}</span></div>
+                  <div class="row-item"><span class="key">AET</span><span class="val-sm">{EscHtml(_mwlConfig.AET)}</span></div>
+                  <div class="row-item"><span class="key">مصدر البيانات</span><span class="val-sm">{EscHtml(_mwlConfig.DataSource)}</span></div>
+                  <div class="row-item"><span class="key">إجمالي الاستعلامات</span><span class="val-sm">{mwl.TotalQueries}</span></div>
+                  <div class="row-item"><span class="key">النتائج المُرجَعة</span><span class="val-sm">{mwl.TotalResultsReturned}</span></div>
+                  <div class="row-item"><span class="key">الأخطاء</span><span class="val-sm" style="color:#f87171">{mwl.TotalQueryErrors}</span></div>
+                </div>
+                """);
+
+            sb.AppendLine("</div>"); // end grid2
+
+            // جدول حالة المنافذ
+            sb.AppendLine("<h2>📡 حالة منافذ DICOM</h2>");
+            if (ports.Any())
+            {
+                sb.AppendLine("<div class='section-card'>");
+                sb.AppendLine("<table class='port-table'><tr><th>AET</th><th>المنفذ</th><th>الحالة</th></tr>");
+                foreach (var p in ports.OrderBy(x => x.Port))
+                {
+                    string pBadge = p.IsListening
+                        ? "<span class='badge badge-ok'>يعمل ✅</span>"
+                        : "<span class='badge badge-fail'>متوقف ❌</span>";
+                    sb.AppendLine($"<tr><td style='font-family:monospace;color:#38bdf8'>{EscHtml(p.AET)}</td><td>{p.Port}</td><td>{pBadge}</td></tr>");
+                }
+                sb.AppendLine("</table></div>");
+            }
+            else
+            {
+                sb.AppendLine("<div class='section-card no-data'>لا توجد منافذ مضبوطة.</div>");
+            }
+
+            // الاتصالات النشطة
+            sb.AppendLine("<h2>🔌 الاتصالات النشطة</h2>");
+            sb.AppendLine("<div class='section-card'>");
+            if (!conns.Any())
+            {
+                sb.AppendLine("<div class='no-data'>لا توجد اتصالات نشطة حالياً.</div>");
+            }
+            else
+            {
+                sb.AppendLine("<div class='conn-list'>");
+                foreach (var c in conns)
+                {
+                    var dur = (DateTime.UtcNow - c.ConnectedAt);
+                    sb.AppendLine($"<div class='conn-item'>" +
+                                  $"<span>📟 <span>{EscHtml(c.CallingAE)}</span> → <span>{EscHtml(c.CalledAE)}</span></span>" +
+                                  $"<span>🌐 {EscHtml(c.RemoteHost)}:{c.Port}</span>" +
+                                  $"<span>⏱️ {dur:mm\\:ss}</span>" +
+                                  "</div>");
+                }
+                sb.AppendLine("</div>");
+            }
+            sb.AppendLine("</div>");
+
+            sb.AppendLine($"<footer>DICOM Print Server — Health Page | آخر تحديث: {DateTime.Now:yyyy-MM-dd HH:mm:ss}</footer></body></html>");
+            return sb.ToString();
+        }
+
         private string BuildDbStatsHtml()
         {
             var totals = _repo?.GetTotals() ?? new DbGlobalTotals();
@@ -1901,22 +2710,31 @@ namespace DicomPrintServer.Workers
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>إحصائيات قاعدة البيانات — DICOM Print Server</title>
                 <style>
-                  body { font-family: 'Segoe UI', Arial, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; padding:20px; }
-                  h1   { color:#38bdf8; border-bottom:1px solid #334155; padding-bottom:8px; }
-                  h2   { color:#7dd3fc; margin-top:30px; }
-                  .cards { display:flex; gap:16px; flex-wrap:wrap; margin:20px 0; }
-                  .card  { background:#1e293b; border-radius:8px; padding:20px 28px; min-width:150px; text-align:center; border:1px solid #334155; }
-                  .card .val { font-size:2em; font-weight:bold; color:#38bdf8; }
-                  .card .lbl { font-size:.85em; color:#94a3b8; margin-top:4px; }
-                  table { border-collapse:collapse; width:100%; background:#1e293b; border-radius:8px; overflow:hidden; }
-                  th { background:#334155; color:#94a3b8; padding:10px 14px; text-align:right; font-weight:600; }
-                  td { padding:9px 14px; border-bottom:1px solid #334155; font-size:.9em; }
+                  * { box-sizing:border-box; margin:0; padding:0; }
+                  body { font-family:'Segoe UI',Arial,sans-serif; background:#0f172a; color:#e2e8f0; padding:20px; }
+                  h1 { padding-bottom:12px; margin-bottom:20px; border-bottom:1px solid #334155;
+                       background:linear-gradient(135deg,#38bdf8,#818cf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+                  h2 { color:#7dd3fc; margin:24px 0 14px; font-size:1.05em; border-right:3px solid #38bdf8; padding-right:8px; }
+                  .nav-links { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:24px; padding:12px; background:#1e293b; border-radius:8px; border:1px solid #334155; }
+                  .nav-links a { color:#94a3b8; text-decoration:none; font-size:.85em; padding:7px 13px; border-radius:6px; transition:all .2s; font-weight:500; }
+                  .nav-links a:hover { color:#38bdf8; background:#0f172a; }
+                  .nav-links a.active { color:#fff; background:linear-gradient(135deg,#0284c7,#4f46e5); }
+                  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:24px; }
+                  .kpi { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:18px 14px; text-align:center; position:relative; overflow:hidden; }
+                  .kpi::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:var(--accent,#38bdf8); }
+                  .kpi .val { font-size:2em; font-weight:700; color:var(--accent,#38bdf8); }
+                  .kpi .lbl { font-size:.78em; color:#94a3b8; margin-top:4px; }
+                  .toolbar { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin-bottom:18px; padding:14px; background:#1e293b; border-radius:8px; border:1px solid #334155; }
+                  .toolbar a.btn-csv { padding:8px 14px; background:#065f46; color:#6ee7b7; text-decoration:none; border-radius:6px; font-size:.85em; font-weight:600; border:1px solid #064e3b; display:inline-flex; align-items:center; gap:6px; transition:all 0.2s; }
+                  .toolbar a.btn-csv:hover { background:#047857; color:#fff; }
+                  table { width:100%; border-collapse:collapse; background:#1e293b; border-radius:8px; overflow:hidden; border:1px solid #334155; }
+                  th { background:#334155; color:#94a3b8; padding:10px 14px; text-align:right; font-size:.85em; font-weight:600; }
+                  td { padding:9px 14px; border-bottom:1px solid #334155; font-size:.88em; color:#cbd5e1; }
                   tr:last-child td { border-bottom:none; }
-                  .ok   { color:#4ade80; }
+                  tr:hover td { background:#0f172a; }
+                  .ok { color:#4ade80; }
                   .fail { color:#f87171; }
-                  .nav-links { margin-bottom:20px; }
-                  .nav-links a { color:#38bdf8; text-decoration:none; margin-left:16px; font-size:.9em; }
-                  .uptime { color:#94a3b8; font-size:.85em; margin-top:-10px; margin-bottom:20px; }
+                  .no-data { text-align:center; padding:40px; color:#64748b; }
                   footer { margin-top:40px; color:#475569; font-size:.8em; text-align:center; }
                 </style>
                 </head>
@@ -1924,24 +2742,26 @@ namespace DicomPrintServer.Workers
                 <h1>🗄️ إحصائيات قاعدة البيانات</h1>
                 """);
 
-            sb.AppendLine("""
-                <div class="nav-links">
-                  <a href="/">🏠 الرئيسية</a>
-                  <a href="/listeners">🔌 المنافذ</a>
-                  <a href="/settings">⚙️ الإعدادات</a>
-                  <a href="/stats">📊 الإحصائيات</a>
-                  <a href="/jobs">📋 المهام</a>
-                  <a href="/printers">🖨️ الطابعات</a>
-                  <a href="/mwl">📋 MWL</a>
-                  <a href="/api/health">💚 Health</a>
-                </div>
-                """);
+            sb.AppendLine(BuildNavHtml("/db/stats"));
 
-            sb.AppendLine("<div class='cards'>");
-            AddCard(sb, totals.TotalOperations.ToString(), "إجمالي المهام");
-            AddCard(sb, totals.TotalSuccess.ToString(), "نجحت");
-            AddCard(sb, totals.TotalFailed.ToString(), "فشلت");
-            AddCard(sb, totals.TotalPages.ToString(), "إجمالي الصفحات");
+            // أدوات تصدير قاعدة البيانات
+            sb.AppendLine("<div class='toolbar'>");
+            if (_repo != null)
+            {
+                sb.AppendLine("<a class='btn-csv' href='/api/db/jobs/csv'>📥 تصدير سجل قاعدة البيانات كاملاً (CSV)</a>");
+            }
+            else
+            {
+                sb.AppendLine("<span style='color:#f87171;font-size:.9em;'>قاعدة البيانات غير مفعلة، لا يمكن التصدير.</span>");
+            }
+            sb.AppendLine("</div>");
+
+            // بطاقات الإحصائيات
+            sb.AppendLine("<div class='kpi-grid'>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#38bdf8'><div class='val'>{totals.TotalOperations}</div><div class='lbl'>إجمالي المهام</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#4ade80'><div class='val'>{totals.TotalSuccess}</div><div class='lbl'>نجحت</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#f87171'><div class='val'>{totals.TotalFailed}</div><div class='lbl'>فشلت</div></div>");
+            sb.AppendLine($"<div class='kpi' style='--accent:#818cf8'><div class='val'>{totals.TotalPages}</div><div class='lbl'>إجمالي الصفحات</div></div>");
             sb.AppendLine("</div>");
 
             if (daily.Any())
@@ -1954,8 +2774,12 @@ namespace DicomPrintServer.Workers
                 }
                 sb.AppendLine("</table>");
             }
+            else
+            {
+                sb.AppendLine("<div class='no-data'>لا توجد إحصائيات يومية في قاعدة البيانات حالياً.</div>");
+            }
 
-            sb.AppendLine($"<footer>DICOM Print Server v1.0 — Admin UI</footer></body></html>");
+            sb.AppendLine($"<footer>DICOM Print Server — Database Log</footer></body></html>");
             return sb.ToString();
         }
 
