@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.Drawing.Printing;
+using System.Threading.Tasks;
 using DicomPrintClientGui.Services;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
 
 namespace DicomPrintClientGui.Forms;
 
@@ -63,6 +66,10 @@ public class MainForm : Form
 
     // Auto-refresh
     private readonly System.Windows.Forms.Timer _refreshTimer = new() { Interval = 10_000 };
+
+    // Embedded WebView2 for Admin Dashboard
+    private Microsoft.Web.WebView2.WinForms.WebView2? _webView;
+    private bool _webViewInitialized = false;
 
     // ─────────────────────────────────────────────────────────────────────────
     public MainForm()
@@ -159,6 +166,7 @@ public class MainForm : Form
         _tabs.TabPages.Add(BuildLogTab());
         _tabs.TabPages.Add(BuildPortsTab());
         _tabs.TabPages.Add(BuildGlobalSettingsTab());
+        _tabs.TabPages.Add(BuildEmbeddedDashboardTab());
         Controls.Add(_tabs);
     }
 
@@ -367,6 +375,7 @@ public class MainForm : Form
 
         var txtPort    = new TextBox { Text = listener.Port.ToString() };
         var txtAet     = new TextBox { Text = listener.AET };
+        var txtAddAETs = new TextBox { Text = string.Join(", ", listener.AdditionalAETs ?? new()) };
         var cmbPrinter = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown };
         foreach (string p in PrinterSettings.InstalledPrinters) cmbPrinter.Items.Add(p);
         cmbPrinter.Text = listener.WindowsPrinterName;
@@ -380,6 +389,7 @@ public class MainForm : Form
 
         AddRow("رقم المنفذ (Port):", txtPort);
         AddRow("AE Title:", txtAet);
+        AddRow("AETs إضافية (مفصولة بفواصل):", txtAddAETs);
         AddRow("الطابعة:", cmbPrinter);
         AddRow("", chkPrint);
         AddRow("مجلد الحفظ:", txtFolder);
@@ -395,6 +405,8 @@ public class MainForm : Form
         var numContr   = new NumericUpDown { Minimum = 0.1m, Maximum = 3.0m, DecimalPlaces = 2, Increment = 0.1m, Value = (decimal)listener.ImageProcessing.Contrast, Width = 100 };
         var numBright  = new NumericUpDown { Minimum = -1.0m, Maximum = 1.0m, DecimalPlaces = 2, Increment = 0.05m, Value = (decimal)listener.ImageProcessing.Brightness, Width = 100 };
         var numSharp   = new NumericUpDown { Minimum = 0.0m, Maximum = 5.0m, DecimalPlaces = 2, Increment = 0.1m, Value = (decimal)listener.ImageProcessing.Sharpness, Width = 100 };
+        var numWinWidth = new NumericUpDown { Minimum = 0m, Maximum = 65535m, DecimalPlaces = 0, Increment = 100m, Value = (decimal)listener.ImageProcessing.WindowWidth, Width = 100 };
+        var numWinCenter = new NumericUpDown { Minimum = 0m, Maximum = 65535m, DecimalPlaces = 0, Increment = 100m, Value = (decimal)listener.ImageProcessing.WindowCenter, Width = 100 };
         var chkInvert  = new CheckBox { Text = "عكس الألوان (Invert)", Checked = listener.ImageProcessing.Invert, Width = 250 };
         var chkCalib   = new CheckBox { Text = "وضع المعايرة", Checked = listener.ImageProcessing.CalibrationMode, Width = 250 };
         var cmbCalPat  = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
@@ -406,6 +418,8 @@ public class MainForm : Form
         AddRow("كونتراست (Contrast):", numContr);
         AddRow("سطوع (Brightness):", numBright);
         AddRow("حدة (Sharpness):", numSharp);
+        AddRow("Window Width:", numWinWidth);
+        AddRow("Window Center:", numWinCenter);
         AddRow("", chkInvert);
         AddRow("", chkCalib);
         AddRow("نمط المعايرة:", cmbCalPat);
@@ -449,16 +463,17 @@ public class MainForm : Form
         // Store controls in tag for save
         page.Tag = new PortControls
         {
-            Listener   = listener,
-            TxtPort    = txtPort,   TxtAet     = txtAet,   CmbPrinter = cmbPrinter,
-            ChkPrint   = chkPrint,  TxtFolder  = txtFolder, NumDpi    = numDpi,
-            ChkJpg     = chkJpg,    NumJpgQ    = numJpgQ,  ChkPdf    = chkPdf,
-            NumGamma   = numGamma,  NumContr   = numContr,  NumBright = numBright,
-            NumSharp   = numSharp,  ChkInvert  = chkInvert, ChkCalib  = chkCalib,
-            CmbCalPat  = cmbCalPat,
-            ChkHead    = chkHead,   TxtHead    = txtHead,
-            ChkFoot    = chkFoot,   TxtFoot    = txtFoot,
-            ChkWmark   = chkWmark,  TxtWmark   = txtWmark
+            Listener       = listener,
+            TxtPort        = txtPort,   TxtAet        = txtAet,   TxtAddAETs    = txtAddAETs,
+            CmbPrinter     = cmbPrinter,
+            ChkPrint       = chkPrint,  TxtFolder     = txtFolder, NumDpi        = numDpi,
+            ChkJpg         = chkJpg,    NumJpgQ       = numJpgQ,  ChkPdf        = chkPdf,
+            NumGamma       = numGamma,  NumContr      = numContr,  NumBright     = numBright,
+            NumSharp       = numSharp,  NumWinWidth   = numWinWidth, NumWinCenter  = numWinCenter,
+            ChkInvert      = chkInvert, ChkCalib      = chkCalib, CmbCalPat     = cmbCalPat,
+            ChkHead        = chkHead,   TxtHead       = txtHead,
+            ChkFoot        = chkFoot,   TxtFoot       = txtFoot,
+            ChkWmark       = chkWmark,  TxtWmark      = txtWmark
         };
 
         // ترتيب مهم: Bottom أولاً ثم Fill آخراً
@@ -640,7 +655,297 @@ public class MainForm : Form
         return page;
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
+    // ════════════════════════════════════════════════════════════════════════════════
+    // EMBEDDED WEB DASHBOARD TAB
+    // ════════════════════════════════════════════════════════════════════════════════
+    private TabPage BuildEmbeddedDashboardTab()
+    {
+        var page = new TabPage("لوحة الويب المدمجة");
+        
+        _webView = new Microsoft.Web.WebView2.WinForms.WebView2
+        {
+            Dock = DockStyle.Fill,
+            Visible = true
+        };
+        
+        _webView.NavigationStarting += OnWebViewNavigationStarting;
+        _webView.NavigationCompleted += OnWebViewNavigationCompleted;
+        _webView.CoreWebView2InitializationCompleted += OnWebViewInitialized;
+        
+        page.Controls.Add(_webView);
+        
+        // تهيئة WebView2 عند اختيار التبويب
+        page.Enter += async (_, _) => await InitializeWebViewAsync();
+        
+        return page;
+    }
+
+    private async Task InitializeWebViewAsync()
+    {
+        if (_webViewInitialized || _webView == null) return;
+        
+        try
+        {
+            // طلب كلمة المرور إذا كانت مطلوبة
+            string password = "";
+            if (!string.IsNullOrEmpty(_settings.AdminApi.AdminPasswordHash))
+            {
+                password = await PromptForPasswordAsync();
+                if (string.IsNullOrEmpty(password))
+                {
+                    ShowWebViewError("تم إلغاء الإدخال. لا يمكن الوصول للوحة الإدارة بدون كلمة مرور.");
+                    return;
+                }
+            }
+            
+            await _webView.EnsureCoreWebView2Async(null);
+            
+            if (!string.IsNullOrEmpty(password))
+            {
+                SetupBasicAuthHandler(password);
+            }
+            
+            int port = _settings.AdminApi.Port;
+            _webView.CoreWebView2.Navigate($"http://localhost:{port}/");
+            
+            _webViewInitialized = true;
+        }
+        catch (Exception ex)
+        {
+            ShowWebViewError($"فشل تهيئة المتصفح المدمج: {ex.Message}\n\nتأكد من تثبيت WebView2 Runtime.");
+        }
+    }
+
+    private Task<string> PromptForPasswordAsync()
+    {
+        var tcs = new TaskCompletionSource<string>();
+        
+        Invoke(() =>
+        {
+            using var dialog = new Form
+            {
+                Text = "مصادقة لوحة الإدارة",
+                Size = new Size(400, 200),
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                RightToLeft = RightToLeft.Yes,
+                RightToLeftLayout = true
+            };
+            
+            var lbl = new Label
+            {
+                Text = $"أدخل كلمة مرور Admin API للمنفذ {_settings.AdminApi.Port}:",
+                Dock = DockStyle.Top,
+                Height = 60,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 10f)
+            };
+            
+            var txtPwd = new TextBox
+            {
+                Dock = DockStyle.Top,
+                Height = 35,
+                Margin = new Padding(20, 10, 20, 0),
+                UseSystemPasswordChar = true,
+                Font = new Font("Segoe UI", 11f)
+            };
+            
+            var btnOk = new Button
+            {
+                Text = "موافق",
+                Dock = DockStyle.Bottom,
+                Height = 40,
+                BackColor = Color.FromArgb(40, 140, 60),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                DialogResult = DialogResult.OK
+            };
+            btnOk.FlatAppearance.BorderSize = 0;
+            
+            var btnCancel = new Button
+            {
+                Text = "إلغاء",
+                Dock = DockStyle.Bottom,
+                Height = 40,
+                BackColor = Color.FromArgb(160, 40, 40),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10f),
+                DialogResult = DialogResult.Cancel
+            };
+            btnCancel.FlatAppearance.BorderSize = 0;
+            
+            dialog.Controls.AddRange(new Control[] { btnCancel, btnOk, txtPwd, lbl });
+            dialog.AcceptButton = btnOk;
+            dialog.CancelButton = btnCancel;
+            
+            if (dialog.ShowDialog(this) == DialogResult.OK)
+            {
+                tcs.SetResult(txtPwd.Text);
+            }
+            else
+            {
+                tcs.SetResult("");
+            }
+        });
+        
+        return tcs.Task;
+    }
+
+    private void SetupBasicAuthHandler(string password)
+    {
+        if (_webView?.CoreWebView2 == null) return;
+        
+        _webView.CoreWebView2.AddWebResourceRequestedFilter(
+            $"http://localhost:{_settings.AdminApi.Port}/*",
+            Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext.All);
+        
+        _webView.CoreWebView2.WebResourceRequested += (sender, args) =>
+        {
+            var request = args.Request;
+            // Check if Authorization header exists
+            string? existingAuth = null;
+            try { existingAuth = request.Headers.GetHeader("Authorization"); } catch { }
+            if (string.IsNullOrEmpty(existingAuth))
+            {
+                var credentials = $"{_settings.AdminApi.AdminUsername}:{password}";
+                var authHeader = "Basic " + Convert.ToBase64String(
+                    System.Text.Encoding.UTF8.GetBytes(credentials));
+                request.Headers.SetHeader("Authorization", authHeader);
+            }
+        };
+    }
+
+    private void OnWebViewNavigationStarting(object? sender, 
+        Microsoft.Web.WebView2.Core.CoreWebView2NavigationStartingEventArgs e)
+    {
+        // السماح بالتنقل فقط داخل localhost:AdminPort
+        var allowedPrefix = $"http://localhost:{_settings.AdminApi.Port}";
+        if (!e.Uri.StartsWith(allowedPrefix) && !e.Uri.StartsWith(allowedPrefix.Replace("http:", "https:")))
+        {
+            e.Cancel = true;
+        }
+    }
+
+    private void OnWebViewNavigationCompleted(object? sender, 
+        Microsoft.Web.WebView2.Core.CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess)
+        {
+            string errorMsg = $"فشل تحميل الصفحة: {e.WebErrorStatus}";
+            
+            // التحقق من أخطاء الاتصال
+            var connectionErrors = new[]
+            {
+                Microsoft.Web.WebView2.Core.CoreWebView2WebErrorStatus.ConnectionAborted,
+                Microsoft.Web.WebView2.Core.CoreWebView2WebErrorStatus.ConnectionReset,
+                Microsoft.Web.WebView2.Core.CoreWebView2WebErrorStatus.CannotConnect,
+                Microsoft.Web.WebView2.Core.CoreWebView2WebErrorStatus.Disconnected,
+                Microsoft.Web.WebView2.Core.CoreWebView2WebErrorStatus.Timeout
+            };
+            
+            if (connectionErrors.Contains(e.WebErrorStatus))
+            {
+                errorMsg = "لا يمكن الاتصال بخدمة Admin API.\n\n" +
+                          "تأكد من:\n" +
+                          "1. خدمة DICOM Print Server تعمل\n" +
+                          "2. Admin API مفعل في الإعدادات\n" +
+                          "3. المنفذ " + _settings.AdminApi.Port + " غير محجوب";
+            }
+            else if (e.WebErrorStatus != Microsoft.Web.WebView2.Core.CoreWebView2WebErrorStatus.Unknown)
+            {
+                // Other HTTP errors (4xx, 5xx, etc.)
+                errorMsg = "خطأ من السيرفر (كود: " + e.WebErrorStatus + "). قد تكون كلمة المرور غير صحيحة.";
+            }
+            
+            ShowWebViewError(errorMsg);
+        }
+    }
+
+    private void OnWebViewInitialized(object? sender, 
+        Microsoft.Web.WebView2.Core.CoreWebView2InitializationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess)
+        {
+            ShowWebViewError($"فشل تهيئة WebView2: {e.InitializationException?.Message}\n\n" +
+                           "يرجى تثبيت Microsoft Edge WebView2 Runtime.");
+        }
+    }
+
+    private void ShowWebViewError(string message)
+    {
+        if (_webView == null) return;
+        
+        Invoke(() =>
+        {
+            _webView.Visible = false;
+            
+            var errorPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.FromArgb(30, 30, 40),
+                Padding = new Padding(20)
+            };
+            
+            var lbl = new Label
+            {
+                Text = message,
+                Dock = DockStyle.Top,
+                Height = 120,
+                ForeColor = Color.FromArgb(255, 100, 100),
+                Font = new Font("Segoe UI", 11f),
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            
+            var btnRetry = new Button
+            {
+                Text = "إعادة المحاولة",
+                Dock = DockStyle.Bottom,
+                Height = 45,
+                BackColor = Color.FromArgb(50, 100, 160),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold)
+            };
+            btnRetry.FlatAppearance.BorderSize = 0;
+            btnRetry.Click += async (_, _) =>
+            {
+                errorPanel.Dispose();
+                _webView.Visible = true;
+                _webViewInitialized = false;
+                await InitializeWebViewAsync();
+            };
+            
+            var btnOpenBrowser = new Button
+            {
+                Text = "فتح في المتصفح الخارجي",
+                Dock = DockStyle.Bottom,
+                Height = 40,
+                Margin = new Padding(0, 10, 0, 0),
+                BackColor = Color.FromArgb(80, 80, 100),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 9f)
+            };
+            btnOpenBrowser.FlatAppearance.BorderSize = 0;
+            btnOpenBrowser.Click += (_, _) =>
+            {
+                Process.Start(new ProcessStartInfo($"http://localhost:{_settings.AdminApi.Port}/") 
+                { 
+                    UseShellExecute = true 
+                });
+            };
+            
+            errorPanel.Controls.AddRange(new Control[] { btnOpenBrowser, btnRetry, lbl });
+            _webView.Parent.Controls.Add(errorPanel);
+            errorPanel.BringToFront();
+        });
+    }
+
+    // ════════════════════════════════════════════════════════════════════════════════
     // DATA REFRESH
     // ═════════════════════════════════════════════════════════════════════════
     private void RefreshAll()
@@ -788,6 +1093,7 @@ public class MainForm : Form
 
             if (int.TryParse(pc.TxtPort.Text, out int port)) L.Port = port;
             L.AET                   = pc.TxtAet.Text;
+            L.AdditionalAETs        = pc.TxtAddAETs.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
             L.WindowsPrinterName    = pc.CmbPrinter.Text;
             L.PrintToWindowsPrinter = pc.ChkPrint.Checked;
             L.OutputFolder          = pc.TxtFolder.Text;
@@ -800,6 +1106,8 @@ public class MainForm : Form
             L.ImageProcessing.Contrast         = (double)pc.NumContr.Value;
             L.ImageProcessing.Brightness       = (double)pc.NumBright.Value;
             L.ImageProcessing.Sharpness        = (double)pc.NumSharp.Value;
+            L.ImageProcessing.WindowWidth      = (double)pc.NumWinWidth.Value;
+            L.ImageProcessing.WindowCenter     = (double)pc.NumWinCenter.Value;
             L.ImageProcessing.Invert           = pc.ChkInvert.Checked;
             L.ImageProcessing.CalibrationMode  = pc.ChkCalib.Checked;
             L.ImageProcessing.CalibrationPattern = pc.CmbCalPat.SelectedItem?.ToString() ?? "TG18QC";
@@ -871,27 +1179,30 @@ public class MainForm : Form
 // Helper: stores controls per port tab for save
 internal class PortControls
 {
-    public ListenerConfig   Listener   { get; init; } = null!;
-    public TextBox          TxtPort    { get; init; } = null!;
-    public TextBox          TxtAet     { get; init; } = null!;
-    public ComboBox         CmbPrinter { get; init; } = null!;
-    public CheckBox         ChkPrint   { get; init; } = null!;
-    public TextBox          TxtFolder  { get; init; } = null!;
-    public NumericUpDown    NumDpi     { get; init; } = null!;
-    public CheckBox         ChkJpg     { get; init; } = null!;
-    public NumericUpDown    NumJpgQ    { get; init; } = null!;
-    public CheckBox         ChkPdf     { get; init; } = null!;
-    public NumericUpDown    NumGamma   { get; init; } = null!;
-    public NumericUpDown    NumContr   { get; init; } = null!;
-    public NumericUpDown    NumBright  { get; init; } = null!;
-    public NumericUpDown    NumSharp   { get; init; } = null!;
-    public CheckBox         ChkInvert  { get; init; } = null!;
-    public CheckBox         ChkCalib   { get; init; } = null!;
-    public ComboBox         CmbCalPat  { get; init; } = null!;
-    public CheckBox         ChkHead    { get; init; } = null!;
-    public TextBox          TxtHead    { get; init; } = null!;
-    public CheckBox         ChkFoot    { get; init; } = null!;
-    public TextBox          TxtFoot    { get; init; } = null!;
-    public CheckBox         ChkWmark   { get; init; } = null!;
-    public TextBox          TxtWmark   { get; init; } = null!;
+    public ListenerConfig   Listener     { get; init; } = null!;
+    public TextBox          TxtPort      { get; init; } = null!;
+    public TextBox          TxtAet       { get; init; } = null!;
+    public TextBox          TxtAddAETs   { get; init; } = null!;
+    public ComboBox         CmbPrinter   { get; init; } = null!;
+    public CheckBox         ChkPrint     { get; init; } = null!;
+    public TextBox          TxtFolder    { get; init; } = null!;
+    public NumericUpDown    NumDpi       { get; init; } = null!;
+    public CheckBox         ChkJpg       { get; init; } = null!;
+    public NumericUpDown    NumJpgQ      { get; init; } = null!;
+    public CheckBox         ChkPdf       { get; init; } = null!;
+    public NumericUpDown    NumGamma     { get; init; } = null!;
+    public NumericUpDown    NumContr     { get; init; } = null!;
+    public NumericUpDown    NumBright    { get; init; } = null!;
+    public NumericUpDown    NumSharp     { get; init; } = null!;
+    public NumericUpDown    NumWinWidth  { get; init; } = null!;
+    public NumericUpDown    NumWinCenter { get; init; } = null!;
+    public CheckBox         ChkInvert    { get; init; } = null!;
+    public CheckBox         ChkCalib     { get; init; } = null!;
+    public ComboBox         CmbCalPat    { get; init; } = null!;
+    public CheckBox         ChkHead      { get; init; } = null!;
+    public TextBox          TxtHead      { get; init; } = null!;
+    public CheckBox         ChkFoot      { get; init; } = null!;
+    public TextBox          TxtFoot      { get; init; } = null!;
+    public CheckBox         ChkWmark     { get; init; } = null!;
+    public TextBox          TxtWmark     { get; init; } = null!;
 }

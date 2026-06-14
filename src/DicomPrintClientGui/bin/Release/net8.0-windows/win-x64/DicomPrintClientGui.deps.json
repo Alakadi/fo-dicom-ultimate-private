@@ -11,7 +11,11 @@
         "dependencies": {
           "Microsoft.Data.Sqlite": "8.0.0",
           "Microsoft.NET.ILLink.Tasks": "8.0.0-rc.1.23419.4",
+          "Microsoft.Web.WebView2": "1.0.3124.44",
           "System.Text.Json": "8.0.5",
+          "Microsoft.Web.WebView2.Core": "1.0.3124.44",
+          "Microsoft.Web.WebView2.WinForms": "1.0.3124.44",
+          "Microsoft.Web.WebView2.Wpf": "1.0.3124.44",
           "runtimepack.Microsoft.NETCore.App.Runtime.win-x64": "8.0.0-rc.1.23419.4",
           "runtimepack.Microsoft.WindowsDesktop.App.Runtime.win-x64": "8.0.0-rc.1.23420.5"
         },
@@ -978,6 +982,13 @@
         }
       },
       "Microsoft.NET.ILLink.Tasks/8.0.0-rc.1.23419.4": {},
+      "Microsoft.Web.WebView2/1.0.3124.44": {
+        "native": {
+          "runtimes/win-x64/native/WebView2Loader.dll": {
+            "fileVersion": "1.0.3124.44"
+          }
+        }
+      },
       "SQLitePCLRaw.bundle_e_sqlite3/2.1.6": {
         "dependencies": {
           "SQLitePCLRaw.lib.e_sqlite3": "2.1.6",
@@ -1027,6 +1038,30 @@
             "fileVersion": "8.0.1024.46610"
           }
         }
+      },
+      "Microsoft.Web.WebView2.Core/1.0.3124.44": {
+        "runtime": {
+          "Microsoft.Web.WebView2.Core.dll": {
+            "assemblyVersion": "1.0.3124.44",
+            "fileVersion": "1.0.3124.44"
+          }
+        }
+      },
+      "Microsoft.Web.WebView2.WinForms/1.0.3124.44": {
+        "runtime": {
+          "Microsoft.Web.WebView2.WinForms.dll": {
+            "assemblyVersion": "1.0.3124.44",
+            "fileVersion": "1.0.3124.44"
+          }
+        }
+      },
+      "Microsoft.Web.WebView2.Wpf/1.0.3124.44": {
+        "runtime": {
+          "Microsoft.Web.WebView2.Wpf.dll": {
+            "assemblyVersion": "1.0.3124.44",
+            "fileVersion": "1.0.3124.44"
+          }
+        }
       }
     }
   },
@@ -1066,6 +1101,13 @@
       "sha512": "sha512-Te369WOsPH7E7PRtGi9/0+IRVD9BhmMQgVp4OmXVfDrna29E35bE08WKED0/15VwJ28vVd5+JbtKYZrwO3PXQg==",
       "path": "microsoft.net.illink.tasks/8.0.0-rc.1.23419.4",
       "hashPath": "microsoft.net.illink.tasks.8.0.0-rc.1.23419.4.nupkg.sha512"
+    },
+    "Microsoft.Web.WebView2/1.0.3124.44": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-sQb+ACD3ILvHxztxqCWLbhYmFNf5dH0HPhVKFYg020rpeQPkadH0nkVOSsgfSyBDMLypI9iMBeD6uVcVxsKLkg==",
+      "path": "microsoft.web.webview2/1.0.3124.44",
+      "hashPath": "microsoft.web.webview2.1.0.3124.44.nupkg.sha512"
     },
     "SQLitePCLRaw.bundle_e_sqlite3/2.1.6": {
       "type": "package",
@@ -1108,6 +1150,21 @@
       "sha512": "sha512-0f1B50Ss7rqxXiaBJyzUu9bWFOO2/zSlifZ/UNMdiIpDYe4cY4LQQicP4nirK1OS31I43rn062UIJ1Q9bpmHpg==",
       "path": "system.text.json/8.0.5",
       "hashPath": "system.text.json.8.0.5.nupkg.sha512"
+    },
+    "Microsoft.Web.WebView2.Core/1.0.3124.44": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.Web.WebView2.WinForms/1.0.3124.44": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Microsoft.Web.WebView2.Wpf/1.0.3124.44": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
     }
   },
   "runtimes": {

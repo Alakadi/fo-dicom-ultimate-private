@@ -48,6 +48,10 @@
               "version": "[8.0.0-rc.1.23419.4, )",
               "autoReferenced": true
             },
+            "Microsoft.Web.WebView2": {
+              "target": "Package",
+              "version": "[1.0.3065.44, )"
+            },
             "System.Text.Json": {
               "target": "Package",
               "version": "[8.0.5, )"

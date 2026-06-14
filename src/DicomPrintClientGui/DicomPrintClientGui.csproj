@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3065.44" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 

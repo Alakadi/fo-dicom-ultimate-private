@@ -479,3 +479,11 @@ D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\obj\Release\net8.0-
 D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\obj\Release\net8.0-windows\win-x64\DicomPrintClientGui.pdb
 D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\obj\Release\net8.0-windows\win-x64\DicomPrintClientGui.genruntimeconfig.cache
 D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\obj\Release\net8.0-windows\win-x64\ref\DicomPrintClientGui.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\bin\Release\net8.0-windows\win-x64\runtimes\win-x64\native\WebView2Loader.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\bin\Release\net8.0-windows\win-x64\WebView2Loader.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\bin\Release\net8.0-windows\win-x64\Microsoft.Web.WebView2.Core.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\bin\Release\net8.0-windows\win-x64\Microsoft.Web.WebView2.WinForms.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\bin\Release\net8.0-windows\win-x64\Microsoft.Web.WebView2.Wpf.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\bin\Release\net8.0-windows\win-x64\Microsoft.Web.WebView2.Core.xml
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\bin\Release\net8.0-windows\win-x64\Microsoft.Web.WebView2.WinForms.xml
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintClientGui\bin\Release\net8.0-windows\win-x64\Microsoft.Web.WebView2.Wpf.xml

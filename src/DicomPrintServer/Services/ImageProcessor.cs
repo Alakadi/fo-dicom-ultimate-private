@@ -34,19 +34,19 @@ namespace DicomPrintServer.Services
             image.Mutate(ctx =>
             {
                 // 1. Brightness / Contrast (ImageSharp يوفّرهما مباشرة)
-                if (config.Brightness != 0f || config.Contrast != 1f)
+                if (config.Brightness != 0.0 || config.Contrast != 1.0)
                 {
-                    ctx.Brightness(config.Brightness + 1f)   // 1.0 = لا تغيير
-                       .Contrast(config.Contrast);
+                    ctx.Brightness((float)(config.Brightness + 1.0))   // 1.0 = لا تغيير
+                       .Contrast((float)config.Contrast);
                 }
 
                 // 2. Gamma (LUT يدوي لأن ImageSharp لا يوفّر Gamma مباشرة)
-                if (Math.Abs(config.Gamma - 1.0f) > 0.001f)
-                    ApplyGammaLut(ctx, config.Gamma);
+                if (Math.Abs(config.Gamma - 1.0) > 0.001)
+                    ApplyGammaLut(ctx, (float)config.Gamma);
 
                 // 3. Sharpness
-                if (config.Sharpness > 0f)
-                    ctx.GaussianSharpen(config.Sharpness);
+                if (config.Sharpness > 0.0)
+                    ctx.GaussianSharpen((float)config.Sharpness);
 
                 // 4. Invert (MONOCHROME1 في DICOM — أبيض = هواء)
                 if (config.Invert)

@@ -109,7 +109,20 @@ namespace DicomPrintServer.Services
 
                 var listenerConfig = _config.Listeners.FirstOrDefault(l => l.Port == port);
                 if (listenerConfig != null)
+                {
                     _configProvider.UnregisterConfig(listenerConfig.AET);
+                    // Unregister additional AETs
+                    if (listenerConfig.AdditionalAETs != null)
+                    {
+                        foreach (var additionalAet in listenerConfig.AdditionalAETs)
+                        {
+                            if (!string.IsNullOrWhiteSpace(additionalAet))
+                            {
+                                _configProvider.UnregisterConfig(additionalAet);
+                            }
+                        }
+                    }
+                }
             }
             else
             {

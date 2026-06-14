@@ -3,5 +3,6 @@
   <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
     <Import Project="$(NuGetPackageRoot)system.text.json\8.0.5\buildTransitive\net6.0\System.Text.Json.targets" Condition="Exists('$(NuGetPackageRoot)system.text.json\8.0.5\buildTransitive\net6.0\System.Text.Json.targets')" />
     <Import Project="$(NuGetPackageRoot)sqlitepclraw.lib.e_sqlite3\2.1.6\buildTransitive\net8.0\SQLitePCLRaw.lib.e_sqlite3.targets" Condition="Exists('$(NuGetPackageRoot)sqlitepclraw.lib.e_sqlite3\2.1.6\buildTransitive\net8.0\SQLitePCLRaw.lib.e_sqlite3.targets')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.web.webview2\1.0.3124.44\buildTransitive\Microsoft.Web.WebView2.targets" Condition="Exists('$(NuGetPackageRoot)microsoft.web.webview2\1.0.3124.44\buildTransitive\Microsoft.Web.WebView2.targets')" />
   </ImportGroup>
 </Project>

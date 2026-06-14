@@ -1,8 +1,9 @@
 using DicomPrintServer.Configuration;
 using FellowOakDicom.Printing;
 using Microsoft.Extensions.Logging;
-using PdfSharpCore.Drawing;
-using PdfSharpCore.Pdf;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.PixelFormats;
@@ -12,10 +13,10 @@ namespace DicomPrintServer.Services
     /// <summary>
     /// M3: تصدير FilmBox / مجموعة FilmBox إلى ملف PDF.
     ///
-    /// يستخدم PdfSharpCore (cross-platform، MIT License).
+    /// يستخدم QuestPDF (MIT License, cross-platform).
     /// Pipeline:
     ///   FilmBox → JpgExporter.RenderFilmBox() → Image<Bgra32>
-    ///            → MemoryStream (JPEG) → PdfSharpCore XImage → PDF Page
+    ///            → MemoryStream (JPEG) → QuestPDF Image → PDF Page
     ///
     /// كل FilmBox = صفحة PDF واحدة.
     /// يدعم: A4, Letter, A3, حجم حرّ مخصص.
@@ -23,17 +24,20 @@ namespace DicomPrintServer.Services
     public class PdfExporter
     {
         private readonly ILogger<PdfExporter> _logger;
-        private readonly JpgExporter          _jpgExporter;
+        private readonly JpgExporter _jpgExporter;
 
         public PdfExporter(
             ILogger<PdfExporter> logger,
             JpgExporter jpgExporter)
         {
-            _logger      = logger;
+            _logger = logger;
             _jpgExporter = jpgExporter;
+
+            // QuestPDF license - community edition is free for non-commercial use
+            QuestPDF.Settings.License = LicenseType.Community;
         }
 
-        // ══════════════════════════════════════════════════════════════════════
+        // ═══════════════════════════════════════════════════════════════════════
         // نقاط الدخول العامة
         // ══════════════════════════════════════════════════════════════════════
 
@@ -51,36 +55,15 @@ namespace DicomPrintServer.Services
         {
             Directory.CreateDirectory(outputFolder);
 
-            var ts   = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+            var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
             var path = Path.Combine(outputFolder, $"Print_{ts}.pdf");
 
             try
             {
-                using var document = new PdfDocument();
-                document.Info.Title    = "DICOM Print Job";
-                document.Info.Creator  = "DICOM Print Server";
-                document.Info.Subject  = annotationCtx?.PatientName ?? "";
+                var document = new PdfDocument(filmBoxes, config, centerName, annotationCtx, patientInfo, _jpgExporter, _logger);
+                document.GeneratePdf(path);
 
-                // ── صفحة الغلاف (Cover Page) مع بيانات المريض ────────────────────
-                if (patientInfo != null || annotationCtx != null)
-                {
-                    AddCoverPage(document, config, centerName, annotationCtx, patientInfo);
-                }
-
-                for (int i = 0; i < filmBoxes.Count; i++)
-                {
-                    if (annotationCtx != null)
-                    {
-                        annotationCtx.PageNumber = i + 2; // +1 للغلاف
-                        annotationCtx.PageCount  = filmBoxes.Count + 1;
-                    }
-
-                    AddFilmBoxPage(document, filmBoxes[i], config, annotationCtx);
-                }
-
-                document.Save(path);
-                _logger.LogInformation("PDF saved: {Path} ({Pages} page(s) + cover)",
-                    path, filmBoxes.Count);
+                _logger.LogInformation("PDF saved: {Path} ({Pages} page(s))", path, filmBoxes.Count);
             }
             catch (Exception ex)
             {
@@ -105,207 +88,194 @@ namespace DicomPrintServer.Services
                 new List<FellowOakDicom.Printing.FilmBox> { filmBox },
                 outputFolder, config, annotationCtx, patientInfo, centerName);
         }
+    }
 
-        /// <summary>
-        /// يضيف صفحة غلاف PDF مع شعار المركز ومعلومات المريض.
-        /// </summary>
-        private void AddCoverPage(
-            PdfDocument document,
+    // ═══════════════════════════════════════════════════════════════════════
+    // QuestPDF Document Model
+    // ═══════════════════════════════════════════════════════════════════════
+
+    internal class PdfDocument : IDocument
+    {
+        private readonly IList<FilmBox> _filmBoxes;
+        private readonly ListenerConfig _config;
+        private readonly string _centerName;
+        private readonly AnnotationContext? _annotationCtx;
+        private readonly PatientInfo? _patientInfo;
+        private readonly JpgExporter _jpgExporter;
+        private readonly ILogger _logger;
+
+        public PdfDocument(
+            IList<FilmBox> filmBoxes,
             ListenerConfig config,
             string centerName,
             AnnotationContext? annotationCtx,
-            PatientInfo? patientInfo)
+            PatientInfo? patientInfo,
+            JpgExporter jpgExporter,
+            ILogger logger)
         {
-            var page = document.AddPage();
-            page.Width  = XUnit.FromMillimeter(210); // A4
-            page.Height = XUnit.FromMillimeter(297);
+            _filmBoxes = filmBoxes;
+            _config = config;
+            _centerName = centerName;
+            _annotationCtx = annotationCtx;
+            _patientInfo = patientInfo;
+            _jpgExporter = jpgExporter;
+            _logger = logger;
+        }
 
-            using var gfx = XGraphics.FromPdfPage(page);
+        public DocumentMetadata GetMetadata() => DocumentMetadata.Default;
+        public DocumentSettings GetSettings() => DocumentSettings.Default;
 
-            // خلفية فاتحة
-            var bgBrush = new XSolidBrush(XColor.FromArgb(0xF8, 0xFA, 0xFC));
-            gfx.DrawRectangle(bgBrush, 0, 0, page.Width.Point, page.Height.Point);
-
-            // خط العنوان
-            var titleFont = new XFont("Arial", 24, XFontStyle.Bold);
-            var headerFont = new XFont("Arial", 14, XFontStyle.Bold);
-            var normalFont = new XFont("Arial", 11, XFontStyle.Regular);
-            var smallFont = new XFont("Arial", 9, XFontStyle.Regular);
-
-            var titleBrush = new XSolidBrush(XColor.FromArgb(0x1E, 0x3A, 0x5F)); // Dark blue
-            var textBrush = new XSolidBrush(XColors.Black);
-
-            double y = 40;
-
-            // شعار/اسم المركز
-            string displayCenterName = centerName ?? "مركز الأشعة الطبية";
-            gfx.DrawString(displayCenterName, titleFont, titleBrush, new XRect(0, y, page.Width.Point, 40), XStringFormats.TopCenter);
-            y += 50;
-
-            // خط فاصل
-            var linePen = new XPen(XColor.FromArgb(0x38, 0xBD, 0xF8), 2);
-            gfx.DrawLine(linePen, 60, y, page.Width.Point - 60, y);
-            y += 20;
-
-            // عنوان الصفحة
-            gfx.DrawString("تقرير طباعة DICOM", headerFont, titleBrush, new XRect(0, y, page.Width.Point, 30), XStringFormats.TopCenter);
-            y += 40;
-
-            // معلومات المريض
-            if (patientInfo != null)
+        public void Compose(IDocumentContainer container)
+        {
+            // Cover page (if patient info or annotation context exists)
+            if (_patientInfo != null || _annotationCtx != null)
             {
-                gfx.DrawString("بيانات المريض:", headerFont, textBrush, 60, y);
-                y += 25;
-
-                var fields = new (string Label, string? Value)[]
+                container.Page(page =>
                 {
-                    ("الاسم", patientInfo.PatientName),
-                    ("رقم المريض", patientInfo.PatientId),
-                    ("رقم الهاتف", patientInfo.Phone),
-                    ("تاريخ الميلاد", patientInfo.DateOfBirth),
-                    ("البريد الإلكتروني", patientInfo.Email)
-                };
+                    page.Margin(30);
+                    page.PageColor(Colors.White);
+                    page.Size(PageSizes.A4);
+                    page.Content().Element(ComposeCoverPage);
+                });
+            }
+
+            // FilmBox pages
+            foreach (var filmBox in _filmBoxes)
+            {
+                var pageSize = GetPageSize(filmBox.FilmSizeID, filmBox.FilmOrientation == "LANDSCAPE");
+                container.Page(page =>
+                {
+                    page.Margin(0);
+                    page.PageColor(Colors.White);
+                    page.Size(pageSize);
+                    page.Content().Element(c => ComposeFilmBoxPage(c, filmBox));
+                });
+            }
+        }
+
+        private void ComposeCoverPage(IContainer container)
+        {
+            container
+                .Padding(30)
+                .Column(col =>
+                {
+                    // Center name / title
+                    col.Item().AlignCenter().Text(_centerName ?? "مركز الأشعة الطبية")
+                        .FontSize(24).Bold().FontColor(Colors.Blue.Darken3);
+
+                    col.Item().PaddingTop(10).LineHorizontal(2).LineColor(Colors.Blue.Lighten1);
+
+                    col.Item().PaddingTop(20).AlignCenter().Text("تقرير طباعة DICOM")
+                        .FontSize(18).Bold().FontColor(Colors.Blue.Darken3);
+
+                    col.Item().PaddingTop(30);
+
+                    // Patient info
+                    if (_patientInfo != null)
+                    {
+                        col.Item().Text("بيانات المريض:").FontSize(14).Bold().FontColor(Colors.Grey.Darken2);
+                        col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new[]
+                        {
+                            ("الاسم", _patientInfo.PatientName),
+                            ("رقم المريض", _patientInfo.PatientId),
+                            ("رقم الهاتف", _patientInfo.Phone),
+                            ("تاريخ الميلاد", _patientInfo.DateOfBirth),
+                            ("البريد الإلكتروني", _patientInfo.Email)
+                        }));
+                        col.Item().PaddingTop(15);
+                    }
+
+                    // Study info from FilmSession
+                    if (_annotationCtx != null)
+                    {
+                        col.Item().Text("معلومات الدراسة:").FontSize(14).Bold().FontColor(Colors.Grey.Darken2);
+                        col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new[]
+                        {
+                            ("تاريخ الدراسة", _annotationCtx.StudyDate),
+                            ("النمط (Modality)", _annotationCtx.Modality),
+                            ("معرف الدراسة", _annotationCtx.StudyId),
+                            ("المؤسسة", _annotationCtx.Institution)
+                        }));
+                        col.Item().PaddingTop(15);
+                    }
+
+                    // Print info
+                    col.Item().Text("معلومات الطباعة:").FontSize(14).Bold().FontColor(Colors.Grey.Darken2);
+                    col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new[]
+                    {
+                        ("AET الطابعة", _config.AET),
+                        ("تاريخ الطباعة", DateTime.Now.ToString("yyyy-MM-dd HH:mm")),
+                        ("عدد الصفحات", _filmBoxes.Count.ToString())
+                    }));
+
+                    // Footer
+                    col.Item().AlignCenter().PaddingTop(30)
+                        .LineHorizontal(1).LineColor(Colors.Grey.Lighten1);
+
+                    col.Item().AlignCenter().PaddingTop(5)
+                        .Text("DICOM Print Server v1.0 — غير مخصص للاستخدام السريري بدون ترخيص")
+                        .FontSize(9).FontColor(Colors.Grey.Medium);
+                });
+        }
+
+        private void ComposeInfoTable(IContainer container, (string Label, string? Value)[] fields)
+        {
+            container.Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn(1); // Label
+                    columns.RelativeColumn(3); // Value
+                });
 
                 foreach (var (label, value) in fields)
                 {
-                    if (!string.IsNullOrWhiteSpace(value))
-                    {
-                        gfx.DrawString($"{label}: {value}", normalFont, textBrush, 80, y);
-                        y += 22;
-                    }
+                    if (string.IsNullOrWhiteSpace(value)) continue;
+
+                    table.Cell().PaddingBottom(5).Text(label).FontSize(11).Bold().FontColor(Colors.Grey.Darken1);
+                    table.Cell().PaddingBottom(5).Text(value).FontSize(11).FontColor(Colors.Black);
                 }
-                y += 15;
-            }
-
-            // معلومات الدراسة من FilmSession
-            if (annotationCtx != null)
-            {
-                gfx.DrawString("معلومات الدراسة:", headerFont, textBrush, 60, y);
-                y += 25;
-
-                var studyFields = new (string Label, string? Value)[]
-                {
-                    ("تاريخ الدراسة", annotationCtx.StudyDate),
-                    ("النمط (Modality)", annotationCtx.Modality),
-                    ("معرف الدراسة", annotationCtx.StudyId),
-                    ("المؤسسة", annotationCtx.Institution)
-                };
-
-                foreach (var (label, value) in studyFields)
-                {
-                    if (!string.IsNullOrWhiteSpace(value))
-                    {
-                        gfx.DrawString($"{label}: {value}", normalFont, textBrush, 80, y);
-                        y += 22;
-                    }
-                }
-                y += 15;
-            }
-
-            // معلومات الطباعة
-            gfx.DrawString("معلومات الطباعة:", headerFont, textBrush, 60, y);
-            y += 25;
-
-            var printFields = new (string Label, string Value)[]
-            {
-                ("AET الطابعة", config.AET),
-                ("تاريخ الطباعة", DateTime.Now.ToString("yyyy-MM-dd HH:mm")),
-                ("عدد الصفحات", "سيتم تحديده")
-            };
-
-            foreach (var (label, value) in printFields)
-            {
-                gfx.DrawString($"{label}: {value}", normalFont, textBrush, 80, y);
-                y += 22;
-            }
-
-            // تذييل
-            y = page.Height.Point - 60;
-            gfx.DrawLine(linePen, 60, y, page.Width.Point - 60, y);
-            y += 10;
-            gfx.DrawString("DICOM Print Server v1.0 — غير مخصص للاستخدام السريري بدون ترخيص",
-                smallFont, new XSolidBrush(XColors.Gray), new XRect(0, y, page.Width.Point, 20), XStringFormats.TopCenter);
+            });
         }
 
-        // ══════════════════════════════════════════════════════════════════════
-        // بناء صفحة PDF
-        // ══════════════════════════════════════════════════════════════════════
-
-        private void AddFilmBoxPage(
-            PdfDocument document,
-            FellowOakDicom.Printing.FilmBox filmBox,
-            ListenerConfig config,
-            AnnotationContext? annotationCtx)
+        private void ComposeFilmBoxPage(IContainer container, FilmBox filmBox)
         {
-            // رسم FilmBox كـ Image<Bgra32>
-            using var image = _jpgExporter.RenderFilmBox(filmBox, config, annotationCtx);
+            // Render FilmBox as Image<Bgra32>
+            using var image = _jpgExporter.RenderFilmBox(filmBox, _config, _annotationCtx);
 
             if (image == null)
             {
-                _logger.LogWarning("FilmBox {UID} — no renderable image, adding blank page",
-                    filmBox.SOPInstanceUID.UID);
-                AddBlankPage(document);
+                _logger.LogWarning("FilmBox {UID} — no renderable image, adding blank page", filmBox.SOPInstanceUID.UID);
                 return;
             }
 
-            // حجم الصفحة (حجم الفيلم بـ Point — 1 inch = 72 pt)
-            bool landscape = filmBox.FilmOrientation == "LANDSCAPE";
-            var pageSize   = GetPdfPageSize(filmBox.FilmSizeID, landscape);
+            // Convert to JPEG bytes
+            byte[] jpegBytes;
+            using (var ms = new MemoryStream())
+            {
+                image.SaveAsJpeg(ms, new JpegEncoder { Quality = _config.JpgQuality });
+                jpegBytes = ms.ToArray();
+            }
 
-            var page = document.AddPage();
-            page.Width  = pageSize.Width;
-            page.Height = pageSize.Height;
-
-            // تحويل الصورة إلى JPEG buffer ثم تضمينها كـ XImage
-            using var ms = new MemoryStream();
-            image.SaveAsJpeg(ms, new JpegEncoder { Quality = config.JpgQuality });
-            ms.Seek(0, SeekOrigin.Begin);
-
-            using var xImage = XImage.FromStream(() => new MemoryStream(ms.ToArray()));
-            using var gfx    = XGraphics.FromPdfPage(page);
-
-            // رسم الصورة بملء الصفحة مع الحفاظ على نسبة الأبعاد
-            var destRect = FitRect(
-                xImage.PixelWidth, xImage.PixelHeight,
-                page.Width.Point, page.Height.Point);
-
-            gfx.DrawImage(xImage, destRect);
+            container
+                .Image(jpegBytes)
+                .FitWidth()
+                .FitHeight();
         }
 
-        private void AddBlankPage(PdfDocument document)
-        {
-            var page = document.AddPage();
-            page.Width  = XUnit.FromMillimeter(210);   // A4
-            page.Height = XUnit.FromMillimeter(297);
-        }
-
-        // ══════════════════════════════════════════════════════════════════════
-        // مساعدات
-        // ══════════════════════════════════════════════════════════════════════
-
-        private static XRect FitRect(double srcW, double srcH, double dstW, double dstH)
-        {
-            double scale  = Math.Min(dstW / srcW, dstH / srcH);
-            double fitW   = srcW * scale;
-            double fitH   = srcH * scale;
-            double offsetX = (dstW - fitW) / 2;
-            double offsetY = (dstH - fitH) / 2;
-            return new XRect(offsetX, offsetY, fitW, fitH);
-        }
-
-        private static (XUnit Width, XUnit Height) GetPdfPageSize(string? filmSizeId, bool landscape)
+        private PageSize GetPageSize(string? filmSizeId, bool landscape)
         {
             const double PtPerInch = 72.0;
-            const double CmToInch  = 1 / 2.54;
+            const double CmToInch = 1 / 2.54;
 
             (double wIn, double hIn) = filmSizeId switch
             {
-                "A3"     => (29.7 * CmToInch, 42.0 * CmToInch),
-                "A4"     => (21.0 * CmToInch, 29.7 * CmToInch),
-                "A5"     => (14.8 * CmToInch, 21.0 * CmToInch),
+                "A3" => (29.7 * CmToInch, 42.0 * CmToInch),
+                "A4" => (21.0 * CmToInch, 29.7 * CmToInch),
+                "A5" => (14.8 * CmToInch, 21.0 * CmToInch),
                 "LETTER" => (8.5, 11.0),
-                "LEGAL"  => (8.5, 14.0),
-                _        => ParseFilmSizeId(filmSizeId)
+                "LEGAL" => (8.5, 14.0),
+                _ => ParseFilmSizeId(filmSizeId)
             };
 
             double wPt = wIn * PtPerInch;
@@ -313,7 +283,7 @@ namespace DicomPrintServer.Services
 
             if (landscape) (wPt, hPt) = (hPt, wPt);
 
-            return (XUnit.FromPoint(wPt), XUnit.FromPoint(hPt));
+            return new PageSize((float)wPt, (float)hPt);
         }
 
         private static (double w, double h) ParseFilmSizeId(string? id)

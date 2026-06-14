@@ -524,14 +524,29 @@ namespace DicomPrintServer.Services
         {
             if (sender is PrintJob job && job.SendNEventReport)
             {
-                var report = new DicomNEventReportRequest(job.SOPClassUID, job.SOPInstanceUID, e.EventTypeId);
-                report.Dataset = new DicomDataset
+                // Fire-and-forget with proper error handling to avoid ObjectDisposedException
+                _ = Task.Run(async () =>
                 {
-                    { DicomTag.ExecutionStatusInfo, e.ExecutionStatusInfo },
-                    { DicomTag.FilmSessionLabel, e.FilmSessionLabel },
-                    { DicomTag.PrinterName, e.PrinterName }
-                };
-                SendRequestAsync(report).Wait();
+                    try
+                    {
+                        var report = new DicomNEventReportRequest(job.SOPClassUID, job.SOPInstanceUID, e.EventTypeId);
+                        report.Dataset = new DicomDataset
+                        {
+                            { DicomTag.ExecutionStatusInfo, e.ExecutionStatusInfo },
+                            { DicomTag.FilmSessionLabel, e.FilmSessionLabel },
+                            { DicomTag.PrinterName, e.PrinterName }
+                        };
+                        await SendRequestAsync(report);
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Service already disposed - this is expected during shutdown, ignore silently
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogWarning(ex, "Failed to send N-EVENT-REPORT for job {JobId}", job.SOPInstanceUID.UID);
+                    }
+                });
             }
         }
 

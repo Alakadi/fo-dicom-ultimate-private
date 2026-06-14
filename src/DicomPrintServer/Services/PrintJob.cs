@@ -347,8 +347,11 @@ namespace DicomPrintServer.Services
             {
                 if (pageIndex < filmBoxes.Count && e.Graphics != null)
                 {
+                    // Build annotation context for header/footer/watermark on printed pages
+                    var annotationCtx = BuildAnnotationContext(filmBoxes[pageIndex]);
+                    
                     using var sharpImg = _jpgExporter.RenderFilmBox(
-                        filmBoxes[pageIndex], _listenerConfig.FilmResolutionDpi);
+                        filmBoxes[pageIndex], _listenerConfig.FilmResolutionDpi, annotationCtx);
 
                     if (sharpImg != null)
                     {

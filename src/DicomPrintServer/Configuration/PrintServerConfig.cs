@@ -17,6 +17,7 @@ namespace DicomPrintServer.Configuration
     {
         public int    Port                       { get; set; } = 8000;
         public string AET                        { get; set; } = "PRINTSCP";
+        public List<string> AdditionalAETs       { get; set; } = new();  // AETs إضافية لنفس المنفذ
         public string WindowsPrinterName         { get; set; } = "";
         public bool   PrintToWindowsPrinter      { get; set; } = true;
         public bool   SaveJpg                    { get; set; } = true;
@@ -35,16 +36,16 @@ namespace DicomPrintServer.Configuration
     public class ImageProcessingConfig
     {
         /// <summary>Gamma correction (1.0 = لا تغيير، >1 = أغمق، <1 = أفتح)</summary>
-        public float Gamma          { get; set; } = 1.0f;
+        public double Gamma          { get; set; } = 1.0;
 
         /// <summary>Contrast multiplier (1.0 = لا تغيير)</summary>
-        public float Contrast       { get; set; } = 1.0f;
+        public double Contrast       { get; set; } = 1.0;
 
         /// <summary>Brightness offset (-1..+1، 0 = لا تغيير)</summary>
-        public float Brightness     { get; set; } = 0f;
+        public double Brightness     { get; set; } = 0.0;
 
         /// <summary>Gaussian sharpening radius (0 = معطّل)</summary>
-        public float Sharpness      { get; set; } = 0f;
+        public double Sharpness      { get; set; } = 0.0;
 
         /// <summary>قلب الصورة (MONOCHROME1)</summary>
         public bool  Invert         { get; set; } = false;

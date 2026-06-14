@@ -208,6 +208,15 @@ namespace DicomPrintServer.Services
             return RenderFilmBox(filmBox, dummyConfig, null);
         }
 
+        /// <summary>
+        /// يُحوّل FilmBox كاملة إلى Image<Bgra32> (للطباعة عبر GDI) مع التعليقات.
+        /// </summary>
+        public Image<Bgra32>? RenderFilmBox(FilmBox filmBox, int dpi, AnnotationContext? annotationCtx)
+        {
+            var dummyConfig = new ListenerConfig { FilmResolutionDpi = dpi };
+            return RenderFilmBox(filmBox, dummyConfig, annotationCtx);
+        }
+
         // ──────────────────────────────────────────────────────────────────────
         // تخطيط ImageBoxes
         // ──────────────────────────────────────────────────────────────────────

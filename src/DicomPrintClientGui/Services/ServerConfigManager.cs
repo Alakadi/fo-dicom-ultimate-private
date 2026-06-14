@@ -7,6 +7,7 @@ public class ListenerConfig
 {
     public int    Port                  { get; set; }
     public string AET                   { get; set; } = "";
+    public List<string> AdditionalAETs  { get; set; } = new();
     public string WindowsPrinterName    { get; set; } = "";
     public bool   PrintToWindowsPrinter { get; set; } = true;
     public bool   SaveJpg               { get; set; } = true;
@@ -27,6 +28,8 @@ public class ImageProcessingConfig
     public bool   Invert            { get; set; } = false;
     public bool   CalibrationMode   { get; set; } = false;
     public string CalibrationPattern{ get; set; } = "TG18QC";
+    public double WindowWidth       { get; set; } = 0;
+    public double WindowCenter      { get; set; } = 128;
 }
 
 public class AnnotationsConfig

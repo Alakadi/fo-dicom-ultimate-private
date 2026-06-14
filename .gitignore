@@ -1,0 +1,131 @@
+# Build outputs
+build/output/
+build/*.zip
+
+# Source build artifacts
+src/**/bin/
+src/**/obj/
+
+# NuGet packages
+**/packages/
+*.nupkg
+
+# IDE/Editor
+.vs/
+.idea/
+.vscode/
+*.suo
+*.user
+*.userprefs
+*.sln.docstates
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs (runtime - generated when service runs)
+Logs/
+**/Logs/
+**/Errors/
+
+# License keys and certificates
+*.key
+*.pem
+*.pfx
+*.crt
+*.cer
+*.p12
+*.p7b
+*.p8
+*.ppk
+license*.key
+*.pem
+
+# Trial/Development packages
+TrialPackage/
+src.zip
+
+# Publish outputs
+**/publish/
+**/PublishOutputs*.txt
+
+# Single-file publish hosts
+**/singlefilehost.exe
+**/refint/
+**/ref/
+
+# Native assets (QuestPDF, WebView2, etc.)
+**/QuestPdfSkia.dll
+**/qpdf.dll
+**/libgcc_s_seh-1.dll
+**/libstdc++-6.dll
+**/libwinpthread-1.dll
+**/aspnetcorev2_inprocess.dll
+**/WebView2Loader.dll
+**/Microsoft.Web.WebView2*.dll
+**/Microsoft.Web.WebView2*.xml
+**/LatoFont/
+**/runtimes/
+
+# ASP.NET Core / Microsoft DLLs (from single-file publish)
+**/Microsoft.AspNetCore*.dll
+**/Microsoft.Extensions*.dll
+**/Microsoft.JSInterop.dll
+**/Microsoft.Net.Http.Headers.dll
+**/Microsoft.Identity*.dll
+**/System.IO.Pipelines.dll
+**/System.Security.Cryptography*.dll
+**/System.Threading.RateLimiting.dll
+**/System.Diagnostics.EventLog.Messages.dll
+**/ICSharpCode.SharpZipLib.dll
+**/Serilog*.dll
+
+# PDF libraries (old PdfSharpCore removed)
+**/PdfSharpCore*.dll
+**/PdfSharpCore*.resources.dll
+
+# Debug symbols
+*.pdb
+
+# Visual Studio / MSBuild
+*.cache
+*.vcxproj.user
+*.vspscc
+*.vssscc
+*.scc
+_build/
+*.log
+*.tlog
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Database files (runtime)
+*.db
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+
+# Temporary files
+*.tmp
+*.temp
+~$*
+
+# Certificate/Key files in root
+private_key.pem
+public_key.pem
+l.pem
+
+# Installer scripts output
+*.iss
+setup_*.exe
+
+# Rider
+.idea/
+*.sln.iml

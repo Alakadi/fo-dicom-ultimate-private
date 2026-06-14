@@ -1,12 +1,13 @@
 {
   "version": 2,
-  "dgSpecHash": "r5hVsF3+zVehUIuccu0SFD2ETYMTuqAM5APoMxviTY3eawhBgnd2AnDAqzfx5cKGRUYXt1cx0fqYsmBSf7WwtQ==",
+  "dgSpecHash": "I4PLA465oZG3/hxgqYKZ5EaCI+NOPTzNKyBefM+cJi/I1a4c7vCoyLXS2K+7TX8MlTvK4XMk66wbVurDT89ryA==",
   "success": true,
   "projectFilePath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.data.sqlite\\8.0.0\\microsoft.data.sqlite.8.0.0.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.data.sqlite.core\\8.0.0\\microsoft.data.sqlite.core.8.0.0.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.0-rc.1.23419.4\\microsoft.net.illink.tasks.8.0.0-rc.1.23419.4.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.web.webview2\\1.0.3124.44\\microsoft.web.webview2.1.0.3124.44.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\sqlitepclraw.bundle_e_sqlite3\\2.1.6\\sqlitepclraw.bundle_e_sqlite3.2.1.6.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\sqlitepclraw.core\\2.1.6\\sqlitepclraw.core.2.1.6.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\sqlitepclraw.lib.e_sqlite3\\2.1.6\\sqlitepclraw.lib.e_sqlite3.2.1.6.nupkg.sha512",
@@ -17,5 +18,17 @@
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.0-rc.1.23420.5\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.0-rc.1.23420.5.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.0-rc.1.23421.29\\microsoft.aspnetcore.app.runtime.win-x64.8.0.0-rc.1.23421.29.nupkg.sha512"
   ],
-  "logs": []
+  "logs": [
+    {
+      "code": "NU1603",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "DicomPrintClientGui depends on Microsoft.Web.WebView2 (>= 1.0.3065.44) but Microsoft.Web.WebView2 1.0.3065.44 was not found. An approximate best match of Microsoft.Web.WebView2 1.0.3124.44 was resolved.",
+      "libraryId": "Microsoft.Web.WebView2",
+      "targetGraphs": [
+        "net8.0-windows7.0",
+        "net8.0-windows7.0/win-x64"
+      ]
+    }
+  ]
 }

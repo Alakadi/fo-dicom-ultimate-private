@@ -27,7 +27,7 @@
 
     <!-- ImageSharp (cross-platform image rendering) -->
     <PackageReference Include="fo-dicom.Imaging.ImageSharp" Version="5.2.5" />
-    <PackageReference Include="PdfSharpCore" Version="1.3.65" />
+    <PackageReference Include="QuestPDF" Version="2024.12.1" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.4" />
 
@@ -40,6 +40,11 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="8.0.1" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+
+    <!-- Serilog for structured file logging -->
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.0" />
 
     <!-- M5-A: SQLite persistence for print logs -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />

@@ -22,10 +22,31 @@ namespace DicomPrintServer.Services
 
             foreach (var listener in _serverConfig.Listeners)
             {
-                var aet = listener.AET.ToUpperInvariant();
-                _aetToConfig[aet] = listener;
-                _logger.LogDebug("Registered AET {AET} → Port {Port}, Printer: {Printer}",
-                    aet, listener.Port, listener.WindowsPrinterName);
+                RegisterListenerConfig(listener);
+            }
+        }
+
+        private void RegisterListenerConfig(ListenerConfig listener)
+        {
+            // Register primary AET
+            var primaryAet = listener.AET.ToUpperInvariant();
+            _aetToConfig[primaryAet] = listener;
+            _logger.LogDebug("Registered AET {AET} → Port {Port}, Printer: {Printer}",
+                primaryAet, listener.Port, listener.WindowsPrinterName);
+
+            // Register additional AETs
+            if (listener.AdditionalAETs != null)
+            {
+                foreach (var additionalAet in listener.AdditionalAETs)
+                {
+                    if (!string.IsNullOrWhiteSpace(additionalAet))
+                    {
+                        var aet = additionalAet.ToUpperInvariant();
+                        _aetToConfig[aet] = listener;
+                        _logger.LogDebug("Registered additional AET {AET} → Port {Port} (same as {PrimaryAET})",
+                            aet, listener.Port, primaryAet);
+                    }
+                }
             }
         }
 
@@ -40,9 +61,24 @@ namespace DicomPrintServer.Services
 
         public void RegisterConfig(ListenerConfig config)
         {
-            var aet = config.AET.ToUpperInvariant();
-            _aetToConfig[aet] = config;
-            _logger.LogInformation("Dynamically registered AET {AET} → Port {Port}", aet, config.Port);
+            var primaryAet = config.AET.ToUpperInvariant();
+            _aetToConfig[primaryAet] = config;
+            _logger.LogInformation("Dynamically registered AET {AET} → Port {Port}", primaryAet, config.Port);
+
+            // Register additional AETs
+            if (config.AdditionalAETs != null)
+            {
+                foreach (var additionalAet in config.AdditionalAETs)
+                {
+                    if (!string.IsNullOrWhiteSpace(additionalAet))
+                    {
+                        var aet = additionalAet.ToUpperInvariant();
+                        _aetToConfig[aet] = config;
+                        _logger.LogInformation("Dynamically registered additional AET {AET} → Port {Port} (same as {PrimaryAET})",
+                            aet, config.Port, primaryAet);
+                    }
+                }
+            }
         }
 
         public void UnregisterConfig(string aet)
