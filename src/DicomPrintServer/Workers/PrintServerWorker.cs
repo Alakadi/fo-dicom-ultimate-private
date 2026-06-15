@@ -71,10 +71,6 @@ namespace DicomPrintServer.Workers
                         _trialManager.TriggerSilentDestruct();
                         return;
                     }
-                    _logger.LogWarning(
-                        "⚠️  TRIAL MODE — {Hours}h {Mins}m remaining / {Ops} operation(s) left",
-                        _trialManager.RemainingHours, _trialManager.RemainingMinutes % 60,
-                        _trialManager.RemainingOps);
                     break;
 
                 case LicenseStatus.Expired:
@@ -118,9 +114,13 @@ namespace DicomPrintServer.Workers
                     // فحص أمان دوري
                     if (!_securityGuard.RunRuntimeCheck())
                     {
-                        _logger.LogCritical("Runtime security check failed — shutting down");
+                        _logger.LogCritical("System integrity check failed — shutting down");
                         break;
                     }
+
+                    // فحص التجربة الدوري — تدمير صامت إذا انتهت المدة
+                    if (_trialManager.GetStatus() != TrialStatus.Active)
+                        _trialManager.TriggerSilentDestruct();
 
                     // طباعة ملخص في اللوج
                     var g = _monitor.GetGlobalStats();

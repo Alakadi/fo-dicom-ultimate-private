@@ -351,7 +351,7 @@ namespace DicomPrintServer.Services
                     var annotationCtx = BuildAnnotationContext(filmBoxes[pageIndex]);
                     
                     using var sharpImg = _jpgExporter.RenderFilmBox(
-                        filmBoxes[pageIndex], _listenerConfig.FilmResolutionDpi, annotationCtx);
+                        filmBoxes[pageIndex], _listenerConfig, annotationCtx);
 
                     if (sharpImg != null)
                     {
