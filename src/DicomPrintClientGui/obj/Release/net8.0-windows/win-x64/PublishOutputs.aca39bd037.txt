@@ -1,12 +1,4 @@
 D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\DicomPrintClientGui.pdb
-D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\runtimes\win-x64\native\WebView2Loader.dll
-D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\D3DCompiler_47_cor3.dll
-D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\PenImc_cor3.dll
-D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\PresentationNative_cor3.dll
-D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\vcruntime140_cor3.dll
-D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\wpfgfx_cor3.dll
-D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\WebView2Loader.dll
-D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\e_sqlite3.dll
 D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\Microsoft.Web.WebView2.Core.xml
 D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\Microsoft.Web.WebView2.WinForms.xml
 D:\fodicom\fo-dicom-ultimate-private\build\output\trial\client\Microsoft.Web.WebView2.Wpf.xml

@@ -154,13 +154,14 @@ namespace DicomPrintServer.Services
                     AET         = session.AET
                 };
 
-                string pdfPath = await Task.Run(() =>
+                string? pdfPath = await Task.Run(() =>
                     _pdfExporter.ExportFilmBoxList(
                         boxes, folder, session.ListenerConfig, ctx));
 
-                _logger.LogInformation(
-                    "PdfSession: saved PDF for {PID} ({N} pages) → {Path}",
-                    session.PatientId, boxes.Count, pdfPath);
+                if (pdfPath != null)
+                    _logger.LogInformation(
+                        "PdfSession: saved PDF for {PID} ({N} pages) → {Path}",
+                        session.PatientId, boxes.Count, pdfPath);
             }
             catch (Exception ex)
             {

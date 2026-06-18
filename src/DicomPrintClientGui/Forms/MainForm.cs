@@ -22,8 +22,7 @@ public class MainForm : Form
     private Button       _btnStop    = null!;
     private Button       _btnRestart = null!;
 
-    // ── Tabs ──────────────────────────────────────────────────────────────────
-    private TabControl   _tabs       = null!;
+
 
     // Dashboard tab
     private Label        _lblToday   = null!;
@@ -85,15 +84,19 @@ public class MainForm : Form
         BuildUI();
         _refreshTimer.Tick += (_, _) => RefreshAll();
         _refreshTimer.Start();
-        Load += (_, _) =>
+        Load += async (_, _) =>
         {
             _settings = _cfg.Load();
             _lblConfigPath.Text = "ملف الإعدادات: " + _cfg.ConfigFilePath;
+
+            // تحديث شريط الحالة
             RefreshAll();
-            PopulateSettings();
-            // إذا لم توجد منافذ → أضف منفذ افتراضي للعرض
-            if (_settings.Listeners.Count == 0)
-                AddDefaultListener();
+
+            // تشغيل تلقائي للسيرفر إذا كانت الخدمة مثبتة ومتوقفة
+            await AutoStartServiceAsync();
+
+            // تهيئة WebView2 لعرض لوحة التحكم فوراً
+            await InitializeWebViewAsync();
         };
     }
 
@@ -160,14 +163,19 @@ public class MainForm : Form
         };
         Controls.Add(_lblConfigPath);
 
-        // ── TabControl ────────────────────────────────────────────────────────
-        _tabs = new TabControl { Dock = DockStyle.Fill };
-        _tabs.TabPages.Add(BuildDashboardTab());
-        _tabs.TabPages.Add(BuildLogTab());
-        _tabs.TabPages.Add(BuildPortsTab());
-        _tabs.TabPages.Add(BuildGlobalSettingsTab());
-        _tabs.TabPages.Add(BuildEmbeddedDashboardTab());
-        Controls.Add(_tabs);
+        // ── WebView2 (Embedded Web Dashboard directly as main panel) ──────────
+        _webView = new Microsoft.Web.WebView2.WinForms.WebView2
+        {
+            Dock = DockStyle.Fill,
+            Visible = true
+        };
+
+        _webView.NavigationStarting += OnWebViewNavigationStarting;
+        _webView.NavigationCompleted += OnWebViewNavigationCompleted;
+        _webView.CoreWebView2InitializationCompleted += OnWebViewInitialized;
+
+        Controls.Add(_webView);
+        _webView.BringToFront();
     }
 
     private static Button MakeTopBtn(string text, Color back, EventHandler handler)
@@ -520,6 +528,9 @@ public class MainForm : Form
         _settings.Listeners.Add(newListener);
         PopulatePortTabs();
         _tabPorts.SelectedIndex = _tabPorts.TabPages.Count - 1;
+        // Auto-save so new port persists even if user closes without clicking Save
+        if (_settings.Listeners.Count > 0)
+            _cfg.Save(_settings);
     }
 
     // ── Global Settings Tab ───────────────────────────────────────────────────
@@ -683,7 +694,7 @@ public class MainForm : Form
     private async Task InitializeWebViewAsync()
     {
         if (_webViewInitialized || _webView == null) return;
-        
+
         try
         {
             // طلب كلمة المرور إذا كانت مطلوبة
@@ -697,23 +708,94 @@ public class MainForm : Form
                     return;
                 }
             }
-            
-            await _webView.EnsureCoreWebView2Async(null);
-            
-            if (!string.IsNullOrEmpty(password))
+
+            // ── مجلد بيانات WebView2 ─────────────────────────────────────────
+            // نستخدم %TEMP% بدلاً من LocalAppData لتجنب خطأ E_ACCESSDENIED
+            // عند التشغيل بصلاحيات محدودة أو من خدمة Windows.
+            string userDataFolder = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "DicomPrintClient_WebView2");
+
+            // محاولة بديلة إذا فشل %TEMP%: استخدام مجلد الاسم العشوائي
+            if (!TryCreateDirectory(userDataFolder))
             {
-                SetupBasicAuthHandler(password);
+                userDataFolder = System.IO.Path.Combine(
+                    System.IO.Path.GetTempPath(),
+                    $"DicomWV2_{Environment.UserName}");
+                TryCreateDirectory(userDataFolder);
             }
-            
+
+            var webView2Env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
+                null, userDataFolder);
+
+            await _webView.EnsureCoreWebView2Async(webView2Env);
+
+            if (!string.IsNullOrEmpty(password))
+                SetupBasicAuthHandler(password);
+
             int port = _settings.AdminApi.Port;
             _webView.CoreWebView2.Navigate($"http://localhost:{port}/");
-            
+
             _webViewInitialized = true;
         }
         catch (Exception ex)
         {
-            ShowWebViewError($"فشل تهيئة المتصفح المدمج: {ex.Message}\n\nتأكد من تثبيت WebView2 Runtime.");
+            // تحديد نوع الخطأ بدقة لإعطاء المستخدم رسالة واضحة
+            string errMsg;
+            if (ex.Message.Contains("E_ACCESSDENIED") || ex.Message.Contains("0x80070005"))
+                errMsg = $"خطأ صلاحيات WebView2:\n{ex.Message}\n\nحلول:\n• شغّل البرنامج كمسؤول (Run as Administrator)\n• أو تحقق من تثبيت WebView2 Runtime.";
+            else if (ex.HResult == unchecked((int)0x80004005) || ex.Message.Contains("not found") || ex.Message.Contains("WebView2"))
+                errMsg = $"WebView2 Runtime غير مثبت.\n\nحمّله من:\nhttps://aka.ms/webview2";
+            else
+                errMsg = $"فشل تهيئة المتصفح المدمج:\n{ex.Message}";
+
+            ShowWebViewError(errMsg);
         }
+    }
+
+    /// <summary>يحاول إنشاء مجلد ويُعيد true عند النجاح.</summary>
+    private static bool TryCreateDirectory(string path)
+    {
+        try { System.IO.Directory.CreateDirectory(path); return true; }
+        catch { return false; }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // AUTO-START SERVICE
+    // ─────────────────────────────────────────────────────────────────────────
+    /// <summary>
+    /// إذا كانت الخدمة مثبتة ومتوقفة → يبدأ تشغيلها تلقائياً عند فتح البرنامج.
+    /// </summary>
+    private async Task AutoStartServiceAsync()
+    {
+        await Task.Run(() =>
+        {
+            try
+            {
+                var status = _svc.GetStatus();
+                if (status != ServiceStatus.Stopped) return; // تعمل أو غير مثبتة
+
+                Invoke(() =>
+                {
+                    _lblStatus.Text     = "جاري تشغيل الخدمة تلقائياً...";
+                    _lblStatus.ForeColor = Color.Orange;
+                    _btnStart.Enabled   = false;
+                });
+
+                var (ok, err) = _svc.Start();
+
+                Invoke(() =>
+                {
+                    RefreshAll();
+                    if (!ok)
+                    {
+                        _lblStatus.Text      = $"تعذّر التشغيل التلقائي: {err}";
+                        _lblStatus.ForeColor = Color.OrangeRed;
+                    }
+                });
+            }
+            catch { /* تجاهل الأخطاء الغير متوقعة في Auto-Start */ }
+        });
     }
 
     private Task<string> PromptForPasswordAsync()
@@ -940,8 +1022,11 @@ public class MainForm : Form
             };
             
             errorPanel.Controls.AddRange(new Control[] { btnOpenBrowser, btnRetry, lbl });
-            _webView.Parent.Controls.Add(errorPanel);
-            errorPanel.BringToFront();
+            if (_webView?.Parent != null)
+            {
+                _webView.Parent.Controls.Add(errorPanel);
+                errorPanel.BringToFront();
+            }
         });
     }
 
@@ -966,23 +1051,28 @@ public class MainForm : Form
         _btnStop.Enabled    = status == ServiceStatus.Running;
         _btnRestart.Enabled = status != ServiceStatus.Unknown;
 
-        // Stats
-        int today = _stats.GetTodayTotal();
-        int total = _stats.GetAllTimeTotal();
-        int pdfs  = _stats.GetTodayPdfCount();
+        // تحديث عدادات لوحة المراقبة — فقط إذا كانت التحكمات موجودة (WinForms mode)
+        try
+        {
+            if (_lblToday != null)
+            {
+                int todayCount = _stats.GetTodayTotal();
+                int totalCount = _stats.GetAllTimeTotal();
+                int pdfCount   = _stats.GetTodayPdfCount();
 
-        _lblToday.Text = $"طباعة اليوم\n{today}";
-        _lblTotal.Text = $"إجمالي الكل\n{total}";
-        _lblPdf.Text   = $"PDF اليوم\n{pdfs}";
+                _lblToday.Text = $"طباعة اليوم\n{todayCount}";
+                _lblTotal.Text = $"إجمالي الكل\n{totalCount}";
+                _lblPdf.Text   = $"PDF اليوم\n{pdfCount}";
+            }
 
-        // 7-day grid
-        _gridDaily.Rows.Clear();
-        foreach (var d in _stats.GetLast7Days())
-            _gridDaily.Rows.Add(d.Date, d.PrinterName, d.PrintCount, d.PdfCount);
-
-        // Log tab (only if visible)
-        if (_tabs.SelectedTab?.Text == "سجل الطباعة")
-            LoadPrintLog();
+            if (_gridDaily != null)
+            {
+                _gridDaily.Rows.Clear();
+                foreach (var d in _stats.GetLast7Days())
+                    _gridDaily.Rows.Add(d.Date, d.PrinterName, d.PrintCount, d.PdfCount);
+            }
+        }
+        catch { /* قاعدة البيانات غير متاحة — تجاهل */ }
     }
 
     private void LoadPrintLog()

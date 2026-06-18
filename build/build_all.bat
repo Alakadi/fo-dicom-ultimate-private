@@ -9,6 +9,9 @@ echo.
 set "ROOT=%~dp0.."
 set "OUT=%ROOT%\build\output"
 set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if exist "C:\Users\DELL\AppData\Local\Programs\Inno Setup 6\ISCC.exe" (
+    set "ISCC=C:\Users\DELL\AppData\Local\Programs\Inno Setup 6\ISCC.exe"
+)
 
 REM --- Stop services and processes ---
 echo Stopping services and processes...

@@ -20,6 +20,23 @@ using System.IO;
 // في single-file publish، نحتاج لتحديد ContentRoot بوضوح
 var basePath = AppContext.BaseDirectory;
 
+// مسار الإعدادات المشترك — %CommonAppData%/DicomPrintServer/appsettings.json
+var commonAppDataDir = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+    "DicomPrintServer");
+var commonAppDataConfig = Path.Combine(commonAppDataDir, "appsettings.json");
+
+// التشغيل الأول: لا يوجد ملف في CommonAppData → انسخ من بجانب EXE
+if (!File.Exists(commonAppDataConfig))
+{
+    var exeConfig = Path.Combine(basePath, "appsettings.json");
+    if (File.Exists(exeConfig))
+    {
+        Directory.CreateDirectory(commonAppDataDir);
+        File.Copy(exeConfig, commonAppDataConfig, overwrite: false);
+    }
+}
+
 // إعداد Serilog - بجانب EXE
 var logPath = Path.Combine(AppContext.BaseDirectory, "Logs");
 var errorLogPath = Path.Combine(logPath, "Errors");
@@ -56,9 +73,10 @@ try
             options.ServiceName = "DICOM Print Server")
         .ConfigureAppConfiguration((context, config) =>
         {
-            config.SetBasePath(basePath)
-                  .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                  .AddJsonFile($"appsettings.{context.HostingEnvironment.EnvironmentName}.json", optional: true)
+            config.Sources.Clear();
+            var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(commonAppDataDir);
+            config.AddJsonFile(fileProvider, "appsettings.json", optional: false, reloadOnChange: true)
+                  .AddJsonFile(fileProvider, $"appsettings.{context.HostingEnvironment.EnvironmentName}.json", optional: true, reloadOnChange: true)
                   .AddEnvironmentVariables()
                   .AddCommandLine(args);
         })

@@ -43,9 +43,9 @@ namespace DicomPrintServer.Services
 
         /// <summary>
         /// يُصدّر قائمة FilmBox إلى ملف PDF واحد (كل FilmBox = صفحة).
-        /// يُعيد مسار الملف المُنشأ.
+        /// يُعيد مسار الملف المُنشأ أو null عند الفشل.
         /// </summary>
-        public string ExportFilmBoxList(
+        public string? ExportFilmBoxList(
             IList<FellowOakDicom.Printing.FilmBox> filmBoxes,
             string outputFolder,
             ListenerConfig config,
@@ -64,19 +64,19 @@ namespace DicomPrintServer.Services
                 document.GeneratePdf(path);
 
                 _logger.LogInformation("PDF saved: {Path} ({Pages} page(s))", path, filmBoxes.Count);
+                return path;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "ExportFilmBoxList failed — {Path}", path);
+                return null;
             }
-
-            return path;
         }
 
         /// <summary>
         /// يُصدّر FilmBox واحدة إلى ملف PDF مستقل (مع غلاف إذا توفرت بيانات).
         /// </summary>
-        public string ExportSingleFilmBox(
+        public string? ExportSingleFilmBox(
             FellowOakDicom.Printing.FilmBox filmBox,
             string outputFolder,
             ListenerConfig config,
@@ -259,8 +259,7 @@ namespace DicomPrintServer.Services
 
             container
                 .Image(jpegBytes)
-                .FitWidth()
-                .FitHeight();
+                .FitWidth();
         }
 
         private PageSize GetPageSize(string? filmSizeId, bool landscape)

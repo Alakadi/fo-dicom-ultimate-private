@@ -35,8 +35,8 @@ Name: "arabic"; MessagesFile: "compiler:Languages\Arabic.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "إنشاء اختصار على سطح المكتب"; GroupDescription: "اختصارات:"; Flags: checked
-Name: "startmenu"; Description: "إنشاء مجموعة في قائمة ابدأ"; GroupDescription: "اختصارات:"; Flags: checked
+Name: "desktopicon"; Description: "إنشاء اختصار على سطح المكتب"; GroupDescription: "اختصارات:"
+Name: "startmenu"; Description: "إنشاء مجموعة في قائمة ابدأ"; GroupDescription: "اختصارات:"
 
 [Files]
 Source: "{#BuildDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion

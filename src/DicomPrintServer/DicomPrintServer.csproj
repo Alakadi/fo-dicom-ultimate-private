@@ -15,6 +15,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
     <!-- Suppress IL3000: Assembly.Location in single-file — handled in code -->
     <NoWarn>$(NoWarn);IL3000</NoWarn>

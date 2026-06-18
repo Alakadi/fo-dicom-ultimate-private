@@ -242,7 +242,8 @@ namespace DicomPrintServer.Services
                     var pdfPath = _pdfExporter.ExportFilmBoxList(
                         filmBoxList, pdfOutput, _listenerConfig, annotCtx, PatientInfo, CenterName);
 
-                    Log.LogInformation("PDF saved → {Path}", pdfPath);
+                    if (pdfPath != null)
+                        Log.LogInformation("PDF saved → {Path}", pdfPath);
                     lastJpgPath ??= pdfPath;
                 }
 

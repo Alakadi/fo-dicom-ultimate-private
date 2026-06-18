@@ -76,43 +76,14 @@ public class PrintServerSettings
 
 public class ServerConfigManager
 {
-    // جميع المسارات المحتملة لملف الإعدادات (بالأولوية)
-    private static readonly string[] CandidatePaths =
-    {
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                     "DicomPrintServer", "appsettings.json"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                     "DicomPrintServer", "appsettings.json"),
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                     "DicomPrintServer", "appsettings.json"),
-        // مسار تطوير Windows
-        Path.Combine(@"D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer", "appsettings.json"),
-        // مسار بجانب EXE الحالي (تشغيل مباشر)
-        Path.Combine(AppContext.BaseDirectory, "..", "Server", "appsettings.json"),
-        Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
-    };
+    private static readonly string ConfigDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "DicomPrintServer");
 
-    private string? _activePath;
+    private static string ConfigFilePathStatic =>
+        Path.Combine(ConfigDir, "appsettings.json");
 
-    public string ConfigFilePath
-    {
-        get
-        {
-            if (_activePath != null) return _activePath;
-            foreach (var p in CandidatePaths)
-            {
-                try
-                {
-                    var full = Path.GetFullPath(p);
-                    if (File.Exists(full)) { _activePath = full; return full; }
-                }
-                catch { }
-            }
-            // إذا لم يوجد أي ملف → استخدم المسار القياسي للحفظ
-            _activePath = CandidatePaths[0];
-            return _activePath;
-        }
-    }
+    public string ConfigFilePath => ConfigFilePathStatic;
 
     public PrintServerSettings Load()
     {
@@ -142,7 +113,25 @@ public class ServerConfigManager
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented        = true
             };
-            root["PrintServer"] = JsonNode.Parse(JsonSerializer.Serialize(settings, opts));
+
+            // Serialize client settings to JSON node
+            var newPs = JsonNode.Parse(JsonSerializer.Serialize(settings, opts)) as JsonObject
+                        ?? new JsonObject();
+
+            // Preserve server-only sections not managed by the client
+            if (root.TryGetPropertyValue("PrintServer", out var existingNode)
+                && existingNode is JsonObject existingObj)
+            {
+                var clientKeys = new HashSet<string>(settings.GetType().GetProperties()
+                    .Select(p => char.ToLowerInvariant(p.Name[0]) + p.Name[1..]));
+                foreach (var kvp in existingObj)
+                {
+                    if (!clientKeys.Contains(kvp.Key))
+                        newPs[kvp.Key] = kvp.Value?.DeepClone();
+                }
+            }
+
+            root["PrintServer"] = newPs;
 
             Directory.CreateDirectory(Path.GetDirectoryName(ConfigFilePath)!);
             File.WriteAllText(ConfigFilePath,
