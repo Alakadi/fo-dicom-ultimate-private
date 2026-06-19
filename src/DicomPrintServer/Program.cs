@@ -100,26 +100,8 @@ try
             services.AddSingleton<LicenseManager>();
             services.AddSingleton<TrialManager>();
             services.AddSingleton<SecurityGuard>();
-            services.AddSingleton<WhatsAppNotifier>(sp =>
-            {
-                var cfg = sp.GetRequiredService<IOptions<PrintServerConfig>>().Value;
-                var wa  = cfg.WhatsApp ?? new WhatsAppServerConfig();
-                return new WhatsAppNotifier(
-                    sp.GetRequiredService<ILogger<WhatsAppNotifier>>(),
-                    new WhatsAppConfig
-                    {
-                        Enabled                = wa.Enabled,
-                        Provider               = wa.Provider,
-                        ApiKey                 = wa.ApiKey,
-                        AccountSid             = wa.AccountSid,
-                        AuthToken              = wa.AuthToken,
-                        FromNumber             = wa.FromNumber,
-                        PhoneNumberId          = wa.PhoneNumberId,
-                        MessageTemplate        = wa.MessageTemplate,
-                        SendImage              = wa.SendImage,
-                        DefaultRecipientPhone  = wa.DefaultRecipientPhone
-                    });
-            });
+            services.AddSingleton<ImageHostingService>();
+            services.AddSingleton<WhatsAppNotifier>();
             services.AddSingleton<MultiPortManager>();
             services.AddSingleton<PdfSessionManager>();
             services.AddSingleton<IConnectionTracker, ConnectionTracker>();

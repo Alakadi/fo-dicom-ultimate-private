@@ -9,7 +9,6 @@
     ".NETCoreApp,Version=v8.0/win-x64": {
       "DicomPrintAdminGui/1.0.0": {
         "dependencies": {
-          "Microsoft.NET.ILLink.Tasks": "8.0.0-rc.1.23419.4",
           "System.Security.Cryptography.ProtectedData": "8.0.0",
           "runtimepack.Microsoft.NETCore.App.Runtime.win-x64": "8.0.0-rc.1.23419.4",
           "runtimepack.Microsoft.WindowsDesktop.App.Runtime.win-x64": "8.0.0-rc.1.23420.5"
@@ -959,7 +958,6 @@
           }
         }
       },
-      "Microsoft.NET.ILLink.Tasks/8.0.0-rc.1.23419.4": {},
       "System.Security.Cryptography.ProtectedData/8.0.0": {
         "runtime": {
           "lib/net8.0/System.Security.Cryptography.ProtectedData.dll": {
@@ -985,13 +983,6 @@
       "type": "runtimepack",
       "serviceable": false,
       "sha512": ""
-    },
-    "Microsoft.NET.ILLink.Tasks/8.0.0-rc.1.23419.4": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-Te369WOsPH7E7PRtGi9/0+IRVD9BhmMQgVp4OmXVfDrna29E35bE08WKED0/15VwJ28vVd5+JbtKYZrwO3PXQg==",
-      "path": "microsoft.net.illink.tasks/8.0.0-rc.1.23419.4",
-      "hashPath": "microsoft.net.illink.tasks.8.0.0-rc.1.23419.4.nupkg.sha512"
     },
     "System.Security.Cryptography.ProtectedData/8.0.0": {
       "type": "package",

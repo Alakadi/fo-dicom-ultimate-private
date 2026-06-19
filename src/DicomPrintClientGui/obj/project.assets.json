@@ -31,12 +31,6 @@
           }
         }
       },
-      "Microsoft.NET.ILLink.Tasks/8.0.0-rc.1.23419.4": {
-        "type": "package",
-        "build": {
-          "build/Microsoft.NET.ILLink.Tasks.props": {}
-        }
-      },
       "Microsoft.Web.WebView2/1.0.3124.44": {
         "type": "package",
         "build": {
@@ -244,12 +238,6 @@
           }
         }
       },
-      "Microsoft.NET.ILLink.Tasks/8.0.0-rc.1.23419.4": {
-        "type": "package",
-        "build": {
-          "build/Microsoft.NET.ILLink.Tasks.props": {}
-        }
-      },
       "Microsoft.Web.WebView2/1.0.3124.44": {
         "type": "package",
         "native": {
@@ -368,57 +356,6 @@
         "lib/netstandard2.0/Microsoft.Data.Sqlite.xml",
         "microsoft.data.sqlite.core.8.0.0.nupkg.sha512",
         "microsoft.data.sqlite.core.nuspec"
-      ]
-    },
-    "Microsoft.NET.ILLink.Tasks/8.0.0-rc.1.23419.4": {
-      "sha512": "Te369WOsPH7E7PRtGi9/0+IRVD9BhmMQgVp4OmXVfDrna29E35bE08WKED0/15VwJ28vVd5+JbtKYZrwO3PXQg==",
-      "type": "package",
-      "path": "microsoft.net.illink.tasks/8.0.0-rc.1.23419.4",
-      "hasTools": true,
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "Icon.png",
-        "LICENSE.TXT",
-        "Sdk/Sdk.props",
-        "THIRD-PARTY-NOTICES.TXT",
-        "analyzers/dotnet/cs/ILLink.CodeFixProvider.dll",
-        "analyzers/dotnet/cs/ILLink.RoslynAnalyzer.dll",
-        "build/Microsoft.NET.ILLink.Analyzers.props",
-        "build/Microsoft.NET.ILLink.Tasks.props",
-        "build/Microsoft.NET.ILLink.targets",
-        "microsoft.net.illink.tasks.8.0.0-rc.1.23419.4.nupkg.sha512",
-        "microsoft.net.illink.tasks.nuspec",
-        "tools/net472/ILLink.Tasks.dll",
-        "tools/net472/ILLink.Tasks.dll.config",
-        "tools/net472/Mono.Cecil.Mdb.dll",
-        "tools/net472/Mono.Cecil.Pdb.dll",
-        "tools/net472/Mono.Cecil.Rocks.dll",
-        "tools/net472/Mono.Cecil.dll",
-        "tools/net472/Sdk/Sdk.props",
-        "tools/net472/System.Buffers.dll",
-        "tools/net472/System.Collections.Immutable.dll",
-        "tools/net472/System.Memory.dll",
-        "tools/net472/System.Numerics.Vectors.dll",
-        "tools/net472/System.Reflection.Metadata.dll",
-        "tools/net472/System.Runtime.CompilerServices.Unsafe.dll",
-        "tools/net472/build/Microsoft.NET.ILLink.Analyzers.props",
-        "tools/net472/build/Microsoft.NET.ILLink.Tasks.props",
-        "tools/net472/build/Microsoft.NET.ILLink.targets",
-        "tools/net8.0/ILLink.Tasks.deps.json",
-        "tools/net8.0/ILLink.Tasks.dll",
-        "tools/net8.0/Mono.Cecil.Mdb.dll",
-        "tools/net8.0/Mono.Cecil.Pdb.dll",
-        "tools/net8.0/Mono.Cecil.Rocks.dll",
-        "tools/net8.0/Mono.Cecil.dll",
-        "tools/net8.0/Sdk/Sdk.props",
-        "tools/net8.0/build/Microsoft.NET.ILLink.Analyzers.props",
-        "tools/net8.0/build/Microsoft.NET.ILLink.Tasks.props",
-        "tools/net8.0/build/Microsoft.NET.ILLink.targets",
-        "tools/net8.0/illink.deps.json",
-        "tools/net8.0/illink.dll",
-        "tools/net8.0/illink.runtimeconfig.json",
-        "useSharedDesignerContext.txt"
       ]
     },
     "Microsoft.Web.WebView2/1.0.3124.44": {
@@ -705,7 +642,6 @@
   "projectFileDependencyGroups": {
     "net8.0-windows7.0": [
       "Microsoft.Data.Sqlite >= 8.0.0",
-      "Microsoft.NET.ILLink.Tasks >= 8.0.0-rc.1.23419.4",
       "Microsoft.Web.WebView2 >= 1.0.3065.44",
       "System.Text.Json >= 8.0.5"
     ]
@@ -716,11 +652,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
+      "projectUniqueName": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
       "projectName": "DicomPrintClientGui",
-      "projectPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
+      "projectPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
       "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
-      "outputPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\obj\\",
+      "outputPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -750,12 +686,6 @@
           "Microsoft.Data.Sqlite": {
             "target": "Package",
             "version": "[8.0.0, )"
-          },
-          "Microsoft.NET.ILLink.Tasks": {
-            "suppressParent": "All",
-            "target": "Package",
-            "version": "[8.0.0-rc.1.23419.4, )",
-            "autoReferenced": true
           },
           "Microsoft.Web.WebView2": {
             "target": "Package",

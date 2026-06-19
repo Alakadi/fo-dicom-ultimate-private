@@ -13,7 +13,7 @@
 
     <!-- Windows Service support -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <PublishSingleFile>true</PublishSingleFile>
+    <PublishSingleFile>false</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
@@ -31,6 +31,7 @@
     <PackageReference Include="QuestPDF" Version="2024.12.1" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.4" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.8" />
 
     <!-- Windows GDI printing (System.Drawing.Printing, PrintDocument) -->
     <PackageReference Include="System.Drawing.Common" Version="8.0.10" />

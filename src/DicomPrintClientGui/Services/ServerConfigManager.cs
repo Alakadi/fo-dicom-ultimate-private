@@ -92,7 +92,14 @@ public class ServerConfigManager
             if (!File.Exists(ConfigFilePath)) return new PrintServerSettings();
             var json = File.ReadAllText(ConfigFilePath);
             var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var doc  = JsonNode.Parse(json)?["PrintServer"];
+            var root = JsonNode.Parse(json);
+            JsonNode? doc = null;
+            if (root is JsonObject obj)
+            {
+                var matchingKey = obj.Select(kvp => kvp.Key)
+                    .FirstOrDefault(k => k.Equals("PrintServer", StringComparison.OrdinalIgnoreCase));
+                if (matchingKey != null) doc = obj[matchingKey];
+            }
             if (doc is null) return new PrintServerSettings();
             return doc.Deserialize<PrintServerSettings>(opts) ?? new PrintServerSettings();
         }
@@ -110,7 +117,6 @@ public class ServerConfigManager
             var root = JsonNode.Parse(json) as JsonObject ?? new JsonObject();
             var opts = new JsonSerializerOptions
             {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented        = true
             };
 
@@ -119,11 +125,18 @@ public class ServerConfigManager
                         ?? new JsonObject();
 
             // Preserve server-only sections not managed by the client
-            if (root.TryGetPropertyValue("PrintServer", out var existingNode)
-                && existingNode is JsonObject existingObj)
+            JsonNode? existingNode = null;
+            var matchingKey = root.Select(kvp => kvp.Key)
+                .FirstOrDefault(k => k.Equals("PrintServer", StringComparison.OrdinalIgnoreCase));
+            if (matchingKey != null)
+            {
+                existingNode = root[matchingKey];
+            }
+
+            if (existingNode is JsonObject existingObj)
             {
                 var clientKeys = new HashSet<string>(settings.GetType().GetProperties()
-                    .Select(p => char.ToLowerInvariant(p.Name[0]) + p.Name[1..]));
+                    .Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
                 foreach (var kvp in existingObj)
                 {
                     if (!clientKeys.Contains(kvp.Key))
@@ -131,7 +144,8 @@ public class ServerConfigManager
                 }
             }
 
-            root["PrintServer"] = newPs;
+            string targetKey = matchingKey ?? "PrintServer";
+            root[targetKey] = newPs;
 
             Directory.CreateDirectory(Path.GetDirectoryName(ConfigFilePath)!);
             File.WriteAllText(ConfigFilePath,

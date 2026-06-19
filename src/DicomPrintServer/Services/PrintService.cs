@@ -118,6 +118,7 @@ namespace DicomPrintServer.Services
 
         public Task OnReceiveAssociationReleaseRequestAsync()
         {
+            TriggerPdfFlush();
             _connectionTracker.UnregisterConnection(CallingAE, CalledAE);
             Clean();
             return SendAssociationReleaseResponseAsync();
@@ -126,6 +127,7 @@ namespace DicomPrintServer.Services
         public void OnReceiveAbort(DicomAbortSource source, DicomAbortReason reason)
         {
             Logger.LogError("Abort received: source={Source}, reason={Reason}", source, reason);
+            TriggerPdfFlush();
             _connectionTracker.UnregisterConnection(CallingAE, CalledAE);
         }
 
@@ -133,6 +135,7 @@ namespace DicomPrintServer.Services
         {
             if (exception != null)
                 Logger.LogError(exception, "Connection closed with error");
+            TriggerPdfFlush();
             _connectionTracker.UnregisterConnection(CallingAE, CalledAE);
             Clean();
         }
@@ -565,6 +568,30 @@ namespace DicomPrintServer.Services
             {
                 _filmSession = null;
                 _printJobs.Clear();
+            }
+        }
+
+        private void TriggerPdfFlush()
+        {
+            if (_filmSession != null && _config?.SavePdf == true && _pdfSessionMgr != null)
+            {
+                var patientId = _filmSession.GetSingleValueOrDefault(DicomTag.PatientID, "");
+                if (!string.IsNullOrEmpty(patientId))
+                {
+                    var calledAe = CalledAE;
+                    var pdfMgr = _pdfSessionMgr;
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await pdfMgr.FlushSessionAsync(calledAe, patientId);
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogWarning(ex, "Failed to flush PDF session for {PatientId} on association closed/released/aborted", patientId);
+                        }
+                    });
+                }
             }
         }
     }

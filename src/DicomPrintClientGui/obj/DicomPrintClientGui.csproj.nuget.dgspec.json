@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj": {}
+    "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj": {}
   },
   "projects": {
-    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj": {
+    "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
+        "projectUniqueName": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
         "projectName": "DicomPrintClientGui",
-        "projectPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
+        "projectPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
         "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
-        "outputPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\obj\\",
+        "outputPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -41,12 +41,6 @@
             "Microsoft.Data.Sqlite": {
               "target": "Package",
               "version": "[8.0.0, )"
-            },
-            "Microsoft.NET.ILLink.Tasks": {
-              "suppressParent": "All",
-              "target": "Package",
-              "version": "[8.0.0-rc.1.23419.4, )",
-              "autoReferenced": true
             },
             "Microsoft.Web.WebView2": {
               "target": "Package",

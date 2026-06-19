@@ -413,11 +413,61 @@ namespace DicomPrintServer.Workers
             catch { return new JsonObject(); }
         }
 
+        private static JsonNode? GetCaseInsensitiveNode(JsonNode? node, string key)
+        {
+            if (node is JsonObject obj)
+            {
+                var matchingKey = obj.Select(kvp => kvp.Key)
+                    .FirstOrDefault(k => k.Equals(key, StringComparison.OrdinalIgnoreCase));
+                return matchingKey != null ? obj[matchingKey] : null;
+            }
+            return node?[key];
+        }
+
+        private static bool CheckAetConflict(JsonArray listeners, int? excludeIndex, string primaryAet, List<string> additionalAets, out string conflictingAet)
+        {
+            conflictingAet = "";
+            var allCandidates = new List<string> { primaryAet.Trim() };
+            allCandidates.AddRange(additionalAets.Select(a => a.Trim()));
+
+            for (int i = 0; i < listeners.Count; i++)
+            {
+                if (excludeIndex.HasValue && i == excludeIndex.Value)
+                    continue;
+
+                var listenerNode = listeners[i];
+                string otherPrimary = GetVal<string>(listenerNode, "AET", "").Trim();
+                var otherAddAetsArr = listenerNode?["AdditionalAETs"] as JsonArray;
+                var otherAets = new List<string> { otherPrimary };
+                if (otherAddAetsArr != null)
+                {
+                    foreach (var item in otherAddAetsArr)
+                    {
+                        string s = (item?.GetValue<string>() ?? "").Trim();
+                        if (!string.IsNullOrEmpty(s))
+                        {
+                            otherAets.Add(s);
+                        }
+                    }
+                }
+
+                foreach (var candidate in allCandidates)
+                {
+                    if (otherAets.Any(o => o.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        conflictingAet = candidate;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
         private static T GetVal<T>(JsonNode? node, string key, T def)
         {
             try
             {
-                var v = node?[key];
+                var v = GetCaseInsensitiveNode(node, key);
                 if (v is null) return def;
                 return v.GetValue<T>();
             }
@@ -433,13 +483,15 @@ namespace DicomPrintServer.Workers
                 var form = HttpUtility.ParseQueryString(body);
 
                 var root = LoadConfig();
-                var ps = (root["PrintServer"] as JsonObject) ?? new JsonObject();
+                string psKey = root.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("PrintServer", StringComparison.OrdinalIgnoreCase)) ?? "PrintServer";
+                var ps = (root[psKey] as JsonObject) ?? new JsonObject();
 
                 ps["CenterName"]          = form["CenterName"] ?? "";
                 ps["CenterLogoPath"]      = form["CenterLogoPath"] ?? "";
                 ps["DefaultOutputFolder"] = form["DefaultOutputFolder"] ?? @"C:\PrintOutput";
 
-                var wa = (ps["WhatsApp"] as JsonObject) ?? new JsonObject();
+                string waKey = ps.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("WhatsApp", StringComparison.OrdinalIgnoreCase)) ?? "WhatsApp";
+                var wa = (ps[waKey] as JsonObject) ?? new JsonObject();
                 wa["Enabled"]                = form["WAEnabled"] == "on";
                 wa["SendImage"]              = form["WASendImage"] == "on";
                 wa["Provider"]               = form["WAProvider"] ?? "CallMeBot";
@@ -450,9 +502,9 @@ namespace DicomPrintServer.Workers
                 wa["FromNumber"]             = form["WAFrom"]    is string fr  && fr.Length    > 0 ? (JsonNode)fr  : null;
                 wa["DefaultRecipientPhone"]  = form["WARecip"]   is string rp  && rp.Length   > 0 ? (JsonNode)rp  : null;
                 wa["MessageTemplate"]        = form["WAMsg"] ?? "";
-                ps["WhatsApp"] = wa;
+                ps[waKey] = wa;
 
-                root["PrintServer"] = ps;
+                root[psKey] = ps;
                 Directory.CreateDirectory(Path.GetDirectoryName(ConfigFilePath)!);
                 File.WriteAllText(ConfigFilePath,
                     root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -474,8 +526,11 @@ namespace DicomPrintServer.Workers
                 var form = HttpUtility.ParseQueryString(body);
 
                 var root = LoadConfig();
-                var ps   = (root["PrintServer"] as JsonObject) ?? new JsonObject();
-                var arr  = ps["Listeners"] as JsonArray ?? new JsonArray();
+                string psKey = root.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("PrintServer", StringComparison.OrdinalIgnoreCase)) ?? "PrintServer";
+                var ps   = (root[psKey] as JsonObject) ?? new JsonObject();
+                
+                string listenersKey = ps.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("Listeners", StringComparison.OrdinalIgnoreCase)) ?? "Listeners";
+                var arr  = ps[listenersKey] as JsonArray ?? new JsonArray();
 
                 // ─── شروط التحقق من البيانات (Port) ───
                 string portStr = (form["NewPort"] ?? "").Trim();
@@ -483,15 +538,6 @@ namespace DicomPrintServer.Workers
                 {
                     resp.StatusCode = 302;
                     resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode("❌ خطأ: رقم المنفذ غير صالح. يجب أن يكون بين 1 و 65535.")}";
-                    resp.Close();
-                    return;
-                }
-
-                bool portExists = arr.Any(x => x?["Port"]?.GetValue<int>() == port);
-                if (portExists)
-                {
-                    resp.StatusCode = 302;
-                    resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode($"❌ خطأ: رقم المنفذ {port} مستخدم بالفعل في منفذ آخر.")}";
                     resp.Close();
                     return;
                 }
@@ -519,11 +565,18 @@ namespace DicomPrintServer.Workers
                     resp.Close();
                     return;
                 }
-                bool aetExists = arr.Any(x => x?["AET"]?.GetValue<string>()?.Equals(aet, StringComparison.OrdinalIgnoreCase) == true);
-                if (aetExists)
+                // ─── AETs إضافية ───
+                string addAetsRaw = (form["NewAdditionalAETs"] ?? "").Trim();
+                var addAetsList = string.IsNullOrEmpty(addAetsRaw)
+                    ? new List<string>()
+                    : addAetsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Where(a => System.Text.RegularExpressions.Regex.IsMatch(a, @"^[a-zA-Z0-9_\-]+$") && a.Length <= 16)
+                        .ToList();
+
+                if (CheckAetConflict(arr, null, aet, addAetsList, out string conflictingAet))
                 {
                     resp.StatusCode = 302;
-                    resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode($"❌ خطأ: معرّف AET '{aet}' مستخدم بالفعل في منفذ آخر.")}";
+                    resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode($"❌ خطأ: معرّف AET '{conflictingAet}' مستخدم بالفعل في منفذ آخر.")}";
                     resp.Close();
                     return;
                 }
@@ -552,13 +605,7 @@ namespace DicomPrintServer.Workers
                     return;
                 }
 
-                // ─── AETs إضافية ───
-                string addAetsRaw = (form["NewAdditionalAETs"] ?? "").Trim();
-                var addAetsList = string.IsNullOrEmpty(addAetsRaw)
-                    ? new List<string>()
-                    : addAetsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                        .Where(a => System.Text.RegularExpressions.Regex.IsMatch(a, @"^[a-zA-Z0-9_\-]+$") && a.Length <= 16)
-                        .ToList();
+
 
                 // ─── شروط التحقق من صيغ الحفظ ───
                 bool saveJpg = form["NewSaveJpg"] == "on";
@@ -597,8 +644,8 @@ namespace DicomPrintServer.Workers
                     }
                 };
                 arr.Add(newL);
-                ps["Listeners"] = arr;
-                root["PrintServer"] = ps;
+                ps[listenersKey] = arr;
+                root[psKey] = ps;
                 Directory.CreateDirectory(Path.GetDirectoryName(ConfigFilePath)!);
                 File.WriteAllText(ConfigFilePath,
                     root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
@@ -639,26 +686,27 @@ namespace DicomPrintServer.Workers
             try
             {
                 var root = LoadConfig();
-                var ps   = (root["PrintServer"] as JsonObject) ?? new JsonObject();
-                var arr  = ps["Listeners"] as JsonArray ?? new JsonArray();
+                string psKey = root.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("PrintServer", StringComparison.OrdinalIgnoreCase)) ?? "PrintServer";
+                var ps   = (root[psKey] as JsonObject) ?? new JsonObject();
+                
+                string listenersKey = ps.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("Listeners", StringComparison.OrdinalIgnoreCase)) ?? "Listeners";
+                var arr  = ps[listenersKey] as JsonArray ?? new JsonArray();
                 if (index >= 0 && index < arr.Count)
                 {
                     var removed = arr[index];
-                    int portToStop = removed["Port"]?.GetValue<int>() ?? 0;
+                    int portToStop = GetVal<int>(removed, "Port", 0);
+                    string aetToRemove = GetVal<string>(removed, "AET", "");
                     arr.RemoveAt(index);
 
-                    ps["Listeners"] = arr;
-                    root["PrintServer"] = ps;
+                    ps[listenersKey] = arr;
+                    root[psKey] = ps;
                     File.WriteAllText(ConfigFilePath,
                         root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
                     // Stop the listener dynamically without restart
                     if (portToStop > 0)
                     {
-                        await _multiPortManager.StopListenerAsync(portToStop);
-                        string aetToRemove = removed["AET"]?.GetValue<string>() ?? "";
-                        if (!string.IsNullOrEmpty(aetToRemove))
-                            _configProvider.UnregisterConfig(aetToRemove);
+                        await _multiPortManager.RemoveListenerAsync(portToStop, aetToRemove);
                     }
 
                     resp.StatusCode = 302;
@@ -689,8 +737,11 @@ namespace DicomPrintServer.Workers
                 var form = HttpUtility.ParseQueryString(body);
 
                 var root = LoadConfig();
-                var ps   = (root["PrintServer"] as JsonObject) ?? new JsonObject();
-                var arr  = ps["Listeners"] as JsonArray ?? new JsonArray();
+                string psKey = root.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("PrintServer", StringComparison.OrdinalIgnoreCase)) ?? "PrintServer";
+                var ps   = (root[psKey] as JsonObject) ?? new JsonObject();
+                
+                string listenersKey = ps.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("Listeners", StringComparison.OrdinalIgnoreCase)) ?? "Listeners";
+                var arr  = ps[listenersKey] as JsonArray ?? new JsonArray();
                 if (index < 0 || index >= arr.Count)
                 {
                     resp.StatusCode = 302;
@@ -707,6 +758,8 @@ namespace DicomPrintServer.Workers
                     resp.Close();
                     return;
                 }
+
+                string oldAet = GetVal<string>(L, "AET", "");
 
                 // ─── AET ───
                 string aet = (form["EditAET"] ?? "").Trim();
@@ -731,24 +784,6 @@ namespace DicomPrintServer.Workers
                     resp.Close();
                     return;
                 }
-                string oldAet = GetVal<string>(L, "AET", "");
-                bool aetChanged = !oldAet.Equals(aet, StringComparison.OrdinalIgnoreCase);
-                if (aetChanged)
-                {
-                    bool aetExists = arr.Any(x =>
-                    {
-                        if (x == L) return false;
-                        return x?["AET"]?.GetValue<string>()?.Equals(aet, StringComparison.OrdinalIgnoreCase) == true;
-                    });
-                    if (aetExists)
-                    {
-                        resp.StatusCode = 302;
-                        resp.RedirectLocation = $"/listeners/edit/{index}?msg={HttpUtility.UrlEncode($"❌ خطأ: معرّف AET '{aet}' مستخدم بالفعل في منفذ آخر.")}";
-                        resp.Close();
-                        return;
-                    }
-                }
-
                 // ─── AdditionalAETs ───
                 string addAetsRaw = (form["EditAdditionalAETs"] ?? "").Trim();
                 var addAetsList = string.IsNullOrEmpty(addAetsRaw)
@@ -756,6 +791,14 @@ namespace DicomPrintServer.Workers
                     : addAetsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                         .Where(a => System.Text.RegularExpressions.Regex.IsMatch(a, @"^[a-zA-Z0-9_\-]+$") && a.Length <= 16)
                         .ToList();
+
+                if (CheckAetConflict(arr, index, aet, addAetsList, out string conflictingAet))
+                {
+                    resp.StatusCode = 302;
+                    resp.RedirectLocation = $"/listeners/edit/{index}?msg={HttpUtility.UrlEncode($"❌ خطأ: معرّف AET '{conflictingAet}' مستخدم بالفعل في منفذ آخر.")}";
+                    resp.Close();
+                    return;
+                }
 
                 // ─── Printer ───
                 string printerVal = (form["EditPrinter"] ?? "").Trim();
@@ -820,40 +863,32 @@ namespace DicomPrintServer.Workers
                 L["SaveJpg"] = saveJpg;
                 L["SavePdf"] = savePdf;
                 L["OutputFolder"] = outputFolder;
-                L["ImageProcessing"] = new JsonObject
+                
+                string ipKey = L.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("ImageProcessing", StringComparison.OrdinalIgnoreCase)) ?? "ImageProcessing";
+                L[ipKey] = new JsonObject
                 {
                     ["Gamma"] = gamma, ["Contrast"] = contrast, ["Brightness"] = brightness,
                     ["Sharpness"] = sharpness, ["Invert"] = invert,
                     ["WindowWidth"] = ww, ["WindowCenter"] = wc,
                     ["CalibrationMode"] = calMode, ["CalibrationPattern"] = calPattern
                 };
-                L["Annotations"] = new JsonObject
+                
+                string annKey = L.Select(kvp => kvp.Key).FirstOrDefault(k => k.Equals("Annotations", StringComparison.OrdinalIgnoreCase)) ?? "Annotations";
+                L[annKey] = new JsonObject
                 {
                     ["ShowHeader"] = showHeader, ["HeaderTemplate"] = headerTmpl,
                     ["ShowFooter"] = showFooter, ["FooterTemplate"] = footerTmpl,
                     ["ShowWatermark"] = showWatermark, ["WatermarkText"] = watermarkText
                 };
 
-                ps["Listeners"] = arr;
-                root["PrintServer"] = ps;
+                arr[index] = L;
+                ps[listenersKey] = arr;
+                root[psKey] = ps;
                 Directory.CreateDirectory(Path.GetDirectoryName(ConfigFilePath)!);
                 File.WriteAllText(ConfigFilePath,
                     root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
 
                 // ─── Restart listener with new config ───
-                await _multiPortManager.StopListenerAsync(port);
-                _configProvider.UnregisterConfig(oldAet);
-                // Unregister old additional AETs too
-                var oldAddAets = L?["AdditionalAETs"] as JsonArray;
-                if (oldAddAets != null)
-                {
-                    foreach (var oldA in oldAddAets)
-                    {
-                        var oldAetStr = oldA?.GetValue<string>();
-                        if (!string.IsNullOrEmpty(oldAetStr))
-                            _configProvider.UnregisterConfig(oldAetStr);
-                    }
-                }
                 var updatedConfig = new ListenerConfig
                 {
                     Port = port,
@@ -880,8 +915,7 @@ namespace DicomPrintServer.Workers
                         ShowWatermark = showWatermark, WatermarkText = watermarkText
                     }
                 };
-                await _multiPortManager.AddListenerAsync(updatedConfig);
-                _configProvider.RegisterConfig(updatedConfig);
+                await _multiPortManager.UpdateListenerAsync(oldAet, updatedConfig);
 
                 resp.StatusCode = 302;
                 resp.RedirectLocation = $"/listeners?msg={HttpUtility.UrlEncode($"✅ تم تحديث المنفذ {port} بنجاح.")}";
@@ -898,8 +932,8 @@ namespace DicomPrintServer.Workers
         private string BuildEditListenerHtml(int index, string message)
         {
             var root = LoadConfig();
-            var ps   = root["PrintServer"];
-            var arr  = ps?["Listeners"] as JsonArray ?? new JsonArray();
+            var ps   = GetCaseInsensitiveNode(root, "PrintServer");
+            var arr  = GetCaseInsensitiveNode(ps, "Listeners") as JsonArray ?? new JsonArray();
             if (index < 0 || index >= arr.Count)
                 return "<html><body><p>❌ المنفذ غير موجود.</p><a href='/listeners'>العودة</a></body></html>";
 
@@ -1388,8 +1422,8 @@ namespace DicomPrintServer.Workers
         private string BuildSettingsHtml(string message)
         {
             var root = LoadConfig();
-            var ps   = root["PrintServer"];
-            var wa   = ps?["WhatsApp"];
+            var ps   = GetCaseInsensitiveNode(root, "PrintServer");
+            var wa   = GetCaseInsensitiveNode(ps, "WhatsApp");
 
             string centerName   = GetVal<string>(ps, "CenterName", "");
             string logoPath     = GetVal<string>(ps, "CenterLogoPath", "");
@@ -1681,8 +1715,8 @@ namespace DicomPrintServer.Workers
         private string BuildListenersHtml(string message)
         {
             var root = LoadConfig();
-            var ps   = root["PrintServer"];
-            var listeners = ps?["Listeners"] as JsonArray ?? new JsonArray();
+            var ps   = GetCaseInsensitiveNode(root, "PrintServer");
+            var listeners = GetCaseInsensitiveNode(ps, "Listeners") as JsonArray ?? new JsonArray();
 
             var installedPrinters = PrinterDiscovery.GetInstalledPrinters();
             var defaultPrinter = PrinterDiscovery.GetDefaultPrinter();
@@ -2243,11 +2277,6 @@ namespace DicomPrintServer.Workers
 
                 if (isNaN(portVal) || portVal < 1 || portVal > 65535) {
                     alert('رقم المنفذ يجب أن يكون بين 1 و 65535');
-                    return false;
-                }
-
-                if (existingPorts.indexOf(portVal) !== -1) {
-                    alert('خطأ: رقم المنفذ ' + portVal + ' مستخدم بالفعل في منفذ آخر!');
                     return false;
                 }
 
@@ -3050,8 +3079,8 @@ namespace DicomPrintServer.Workers
 
             // استخراج الطابعات المستخدمة في الـ listeners
             var root = LoadConfig();
-            var ps   = root["PrintServer"];
-            var listeners = ps?["Listeners"] as System.Text.Json.Nodes.JsonArray ?? new System.Text.Json.Nodes.JsonArray();
+            var ps   = GetCaseInsensitiveNode(root, "PrintServer");
+            var listeners = GetCaseInsensitiveNode(ps, "Listeners") as System.Text.Json.Nodes.JsonArray ?? new System.Text.Json.Nodes.JsonArray();
             var usedPrinters = listeners
                 .Where(x => GetVal<bool>(x, "PrintToWindowsPrinter", false))
                 .Select(x => GetVal<string>(x, "WindowsPrinterName", ""))

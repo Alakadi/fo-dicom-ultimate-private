@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using DicomPrintServer.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -25,18 +26,20 @@ namespace DicomPrintServer.Services
     public class WhatsAppNotifier : IDisposable
     {
         private readonly ILogger<WhatsAppNotifier> _logger;
-        private readonly WhatsAppConfig _config;
+        private readonly IOptionsMonitor<PrintServerConfig> _configMonitor;
         private readonly HttpClient _http;
         private readonly ImageHostingService? _imageHosting;
         private bool _disposed;
 
+        private WhatsAppServerConfig _config => _configMonitor.CurrentValue.WhatsApp ?? new WhatsAppServerConfig();
+
         public WhatsAppNotifier(
             ILogger<WhatsAppNotifier> logger,
-            WhatsAppConfig config,
+            IOptionsMonitor<PrintServerConfig> configMonitor,
             ImageHostingService? imageHosting = null)
         {
             _logger = logger;
-            _config = config;
+            _configMonitor = configMonitor;
             _imageHosting = imageHosting;
             _http   = new HttpClient
             {
@@ -108,10 +111,9 @@ namespace DicomPrintServer.Services
             // https://www.callmebot.com/blog/free-api-whatsapp-messages/
             string apiKey = _config.ApiKey;
             string encoded = Uri.EscapeDataString(message);
+            string cleanPhone = NormalizePhoneOnlyDigits(phone);
 
-            string url = imagePath != null && File.Exists(imagePath)
-                ? $"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded}&apikey={apiKey}"
-                : $"https://api.callmebot.com/whatsapp.php?phone={phone}&text={encoded}&apikey={apiKey}";
+            string url = $"https://api.callmebot.com/whatsapp.php?phone={cleanPhone}&text={encoded}&apikey={apiKey}";
 
             var resp = await _http.GetAsync(url, ct);
             string body = await resp.Content.ReadAsStringAsync(ct);
@@ -142,10 +144,13 @@ namespace DicomPrintServer.Services
 
             string url = $"https://api.twilio.com/2010-04-01/Accounts/{accountSid}/Messages.json";
 
+            string cleanPhone = NormalizePhoneOnlyDigits(phone);
+            string cleanFrom = NormalizePhoneOnlyDigits(fromNumber);
+
             var form = new Dictionary<string, string>
             {
-                ["From"] = $"whatsapp:{fromNumber}",
-                ["To"]   = $"whatsapp:{phone}",
+                ["From"] = $"whatsapp:+{cleanFrom}",
+                ["To"]   = $"whatsapp:+{cleanPhone}",
                 ["Body"] = message
             };
 
@@ -195,6 +200,8 @@ namespace DicomPrintServer.Services
             _http.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", token);
 
+            string cleanPhone = NormalizePhoneOnlyDigits(phone);
+
             object payload;
 
             if (!string.IsNullOrEmpty(imagePath) && File.Exists(imagePath))
@@ -207,7 +214,7 @@ namespace DicomPrintServer.Services
                     payload = new
                     {
                         messaging_product = "whatsapp",
-                        to      = phone,
+                        to      = cleanPhone,
                         type    = "image",
                         image   = new { id = mediaId, caption = message }
                     };
@@ -217,7 +224,7 @@ namespace DicomPrintServer.Services
                     payload = new
                     {
                         messaging_product = "whatsapp",
-                        to   = phone,
+                        to   = cleanPhone,
                         type = "text",
                         text = new { body = message }
                     };
@@ -228,7 +235,7 @@ namespace DicomPrintServer.Services
                 payload = new
                 {
                     messaging_product = "whatsapp",
-                    to   = phone,
+                    to   = cleanPhone,
                     type = "text",
                     text = new { body = message }
                 };
@@ -279,6 +286,15 @@ namespace DicomPrintServer.Services
             return cleaned.ToString();
         }
 
+        private static string NormalizePhoneOnlyDigits(string phone)
+        {
+            var cleaned = new StringBuilder();
+            foreach (char c in phone)
+                if (char.IsDigit(c))
+                    cleaned.Append(c);
+            return cleaned.ToString();
+        }
+
         private static string FormatMessage(string template, string patientName, int pages, PatientInfo? patientInfo = null)
         {
             var msg = template
@@ -310,26 +326,5 @@ namespace DicomPrintServer.Services
             _disposed = true;
             _http.Dispose();
         }
-    }
-
-    // ════════════════════════════════════════════════════════════════════════
-    // إعدادات WhatsApp
-    // ════════════════════════════════════════════════════════════════════════
-
-    public class WhatsAppConfig
-    {
-        public bool   Enabled          { get; set; } = false;
-        /// <summary>CallMeBot | Twilio | Meta</summary>
-        public string Provider         { get; set; } = "CallMeBot";
-        public string ApiKey           { get; set; } = "";
-        public string? AccountSid      { get; set; }
-        public string? AuthToken       { get; set; }
-        public string? FromNumber      { get; set; }
-        public string? PhoneNumberId   { get; set; }
-        public string MessageTemplate  { get; set; } =
-            "✅ طباعة مكتملة\nالمريض: {PatientName}\nالصفحات: {PageCount}\n{DateTime}";
-        public bool   SendImage        { get; set; } = true;
-        /// <summary>رقم الهاتف الافتراضي لإرسال الإشعارات (إذا لم يُحدَّد مع كل مهمة)</summary>
-        public string? DefaultRecipientPhone { get; set; }
     }
 }

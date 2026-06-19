@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {}
+    "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {}
   },
   "projects": {
-    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {
+    "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
+        "projectUniqueName": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
         "projectName": "DicomPrintServer",
-        "projectPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
+        "projectPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
         "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
-        "outputPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\obj\\",
+        "outputPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -58,15 +58,13 @@
               "target": "Package",
               "version": "[8.0.1, )"
             },
-            "Microsoft.NET.ILLink.Tasks": {
-              "suppressParent": "All",
-              "target": "Package",
-              "version": "[8.0.0-rc.1.23419.4, )",
-              "autoReferenced": true
-            },
             "QuestPDF": {
               "target": "Package",
               "version": "[2024.12.1, )"
+            },
+            "SQLitePCLRaw.bundle_e_sqlite3": {
+              "target": "Package",
+              "version": "[2.1.8, )"
             },
             "Serilog.AspNetCore": {
               "target": "Package",

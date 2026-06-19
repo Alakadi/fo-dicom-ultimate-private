@@ -62,15 +62,15 @@ namespace DicomPrintServer.Services
         /// <summary>يبدأ منفذاً محدداً</summary>
         public Task StartListenerAsync(ListenerConfig listener, CancellationToken cancellationToken = default)
         {
-            if (_servers.ContainsKey(listener.Port))
-            {
-                _logger.LogWarning("Port {Port} already active — skipping", listener.Port);
-                return Task.CompletedTask;
-            }
-
             try
             {
                 _configProvider.RegisterConfig(listener);
+
+                if (_servers.ContainsKey(listener.Port))
+                {
+                    _logger.LogInformation("Port {Port} already active — registered AET {AET} on shared port", listener.Port, listener.AET);
+                    return Task.CompletedTask;
+                }
 
                 var server = _serverFactory.Create<DicomPrintService>(listener.Port);
 
@@ -95,6 +95,15 @@ namespace DicomPrintServer.Services
         /// <summary>يوقف ويزيل منفذاً محدداً بدون إيقاف الباقين</summary>
         public Task StopListenerAsync(int port)
         {
+            // Check if there are other listeners still using this port
+            bool portStillNeeded = _config.Listeners.Any(l => l.Port == port);
+
+            if (portStillNeeded)
+            {
+                _logger.LogInformation("Port {Port} is still needed by other AETs — keeping TCP listener active", port);
+                return Task.CompletedTask;
+            }
+
             if (_servers.TryRemove(port, out var server))
             {
                 try
@@ -106,23 +115,6 @@ namespace DicomPrintServer.Services
                 {
                     _logger.LogError(ex, "Error stopping listener on port {Port}", port);
                 }
-
-                var listenerConfig = _config.Listeners.FirstOrDefault(l => l.Port == port);
-                if (listenerConfig != null)
-                {
-                    _configProvider.UnregisterConfig(listenerConfig.AET);
-                    // Unregister additional AETs
-                    if (listenerConfig.AdditionalAETs != null)
-                    {
-                        foreach (var additionalAet in listenerConfig.AdditionalAETs)
-                        {
-                            if (!string.IsNullOrWhiteSpace(additionalAet))
-                            {
-                                _configProvider.UnregisterConfig(additionalAet);
-                            }
-                        }
-                    }
-                }
             }
             else
             {
@@ -130,6 +122,66 @@ namespace DicomPrintServer.Services
             }
 
             return Task.CompletedTask;
+        }
+
+        /// <summary>يزيل منفذاً وتكوينه ديناميكياً</summary>
+        public async Task RemoveListenerAsync(int port, string aet)
+        {
+            _logger.LogInformation("Dynamically removing listener: Port={Port}, AET={AET}", port, aet);
+
+            // Find and remove from _config.Listeners
+            var toRemove = _config.Listeners.FirstOrDefault(l => l.Port == port && l.AET.Equals(aet, StringComparison.OrdinalIgnoreCase));
+            if (toRemove != null)
+            {
+                _config.Listeners.Remove(toRemove);
+            }
+
+            // Unregister AETs from provider
+            _configProvider.UnregisterConfig(aet);
+            if (toRemove?.AdditionalAETs != null)
+            {
+                foreach (var addAet in toRemove.AdditionalAETs)
+                {
+                    if (!string.IsNullOrWhiteSpace(addAet))
+                        _configProvider.UnregisterConfig(addAet);
+                }
+            }
+
+            // Stop the listener TCP server if no other listener is using this port
+            await StopListenerAsync(port);
+        }
+
+        /// <summary>يحدث تكوين منفذ ديناميكياً</summary>
+        public async Task UpdateListenerAsync(string oldAet, ListenerConfig updatedListener)
+        {
+            _logger.LogInformation("Dynamically updating listener: OldAET={OldAET}, NewAET={NewAET}, Port={Port}",
+                oldAet, updatedListener.AET, updatedListener.Port);
+
+            // Find and remove old listener config from _config.Listeners
+            var oldConfig = _config.Listeners.FirstOrDefault(l => l.AET.Equals(oldAet, StringComparison.OrdinalIgnoreCase));
+            if (oldConfig != null)
+            {
+                _config.Listeners.Remove(oldConfig);
+                _configProvider.UnregisterConfig(oldConfig.AET);
+                if (oldConfig.AdditionalAETs != null)
+                {
+                    foreach (var addAet in oldConfig.AdditionalAETs)
+                    {
+                        if (!string.IsNullOrWhiteSpace(addAet))
+                            _configProvider.UnregisterConfig(addAet);
+                    }
+                }
+
+                // If port changed, stop it (it will stop if no other listener uses it)
+                if (oldConfig.Port != updatedListener.Port)
+                {
+                    await StopListenerAsync(oldConfig.Port);
+                }
+            }
+
+            // Add new/updated configuration
+            _config.Listeners.Add(updatedListener);
+            await StartListenerAsync(updatedListener);
         }
 
         /// <summary>يضيف منفذاً جديداً ديناميكياً أثناء التشغيل</summary>

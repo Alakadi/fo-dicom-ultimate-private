@@ -39,12 +39,12 @@ mkdir "%OUT%\full\client"
 mkdir "%OUT%\installers"
 
 echo [1/6] Building Server - TRIAL (8 hours)...
-dotnet publish "%ROOT%\src\DicomPrintServer\DicomPrintServer.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\server" --nologo -v minimal
+dotnet publish "%ROOT%\src\DicomPrintServer\DicomPrintServer.csproj" -c Release -r win-x64 --self-contained true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\server" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
 echo [2/6] Building Server - FULL...
-dotnet publish "%ROOT%\src\DicomPrintServer\DicomPrintServer.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "%OUT%\full\server" --nologo -v minimal
+dotnet publish "%ROOT%\src\DicomPrintServer\DicomPrintServer.csproj" -c Release -r win-x64 --self-contained true -o "%OUT%\full\server" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
@@ -53,22 +53,22 @@ dotnet restore "%ROOT%\src\DicomPrintClientGui\DicomPrintClientGui.csproj" --for
 echo.
 
 echo [3/6] Building Client GUI - TRIAL...
-dotnet publish "%ROOT%\src\DicomPrintClientGui\DicomPrintClientGui.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\client" --nologo -v minimal
+dotnet publish "%ROOT%\src\DicomPrintClientGui\DicomPrintClientGui.csproj" -c Release -r win-x64 --self-contained true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\client" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
 echo [4/6] Building Client GUI - FULL...
-dotnet publish "%ROOT%\src\DicomPrintClientGui\DicomPrintClientGui.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "%OUT%\full\client" --nologo -v minimal
+dotnet publish "%ROOT%\src\DicomPrintClientGui\DicomPrintClientGui.csproj" -c Release -r win-x64 --self-contained true -o "%OUT%\full\client" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
 echo [5/6] Building Admin GUI - FULL (for reseller only)...
-dotnet publish "%ROOT%\src\DicomPrintAdminGui\DicomPrintAdminGui.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o "%OUT%\full\admin" --nologo -v minimal
+dotnet publish "%ROOT%\src\DicomPrintAdminGui\DicomPrintAdminGui.csproj" -c Release -r win-x64 --self-contained true -o "%OUT%\full\admin" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
 echo [6/6] Building Admin GUI - TRIAL (for reseller only)...
-dotnet publish "%ROOT%\src\DicomPrintAdminGui\DicomPrintAdminGui.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\admin" --nologo -v minimal
+dotnet publish "%ROOT%\src\DicomPrintAdminGui\DicomPrintAdminGui.csproj" -c Release -r win-x64 --self-contained true -p:DefineConstants=TRIAL_BUILD -o "%OUT%\trial\admin" --nologo -v minimal
 if %errorlevel% neq 0 goto :error
 echo     OK
 
@@ -123,3 +123,4 @@ echo.
 echo *** BUILD FAILED ***
 pause
 exit /b 1
+

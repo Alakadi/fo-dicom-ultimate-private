@@ -44,7 +44,7 @@ Name: "desktopicon"; Description: "اختصار على سطح المكتب"; Gro
 Name: "autostart";   Description: "تشغيل لوحة التحكم تلقائياً مع Windows"; GroupDescription: "خيارات البدء:"
 
 [Files]
-Source: "{#ServerDir}\{#ServerExe}"; DestDir: "{app}\Server"; Flags: ignoreversion
+Source: "{#ServerDir}\*"; DestDir: "{app}\Server"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#ServerDir}\appsettings.json"; DestDir: "{commonappdata}\DicomPrintServer"; Flags: ignoreversion onlyifdoesntexist
 Source: "{#ClientDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; WebView2 Evergreen Bootstrapper — يُستخرج مؤقتاً فقط عند الحاجة

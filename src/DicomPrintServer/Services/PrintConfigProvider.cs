@@ -29,7 +29,7 @@ namespace DicomPrintServer.Services
         private void RegisterListenerConfig(ListenerConfig listener)
         {
             // Register primary AET
-            var primaryAet = listener.AET.ToUpperInvariant();
+            var primaryAet = listener.AET.Trim().ToUpperInvariant();
             _aetToConfig[primaryAet] = listener;
             _logger.LogDebug("Registered AET {AET} → Port {Port}, Printer: {Printer}",
                 primaryAet, listener.Port, listener.WindowsPrinterName);
@@ -41,7 +41,7 @@ namespace DicomPrintServer.Services
                 {
                     if (!string.IsNullOrWhiteSpace(additionalAet))
                     {
-                        var aet = additionalAet.ToUpperInvariant();
+                        var aet = additionalAet.Trim().ToUpperInvariant();
                         _aetToConfig[aet] = listener;
                         _logger.LogDebug("Registered additional AET {AET} → Port {Port} (same as {PrimaryAET})",
                             aet, listener.Port, primaryAet);
@@ -52,7 +52,8 @@ namespace DicomPrintServer.Services
 
         public ListenerConfig? GetConfig(string aet)
         {
-            if (_aetToConfig.TryGetValue(aet.ToUpperInvariant(), out var config))
+            if (string.IsNullOrEmpty(aet)) return null;
+            if (_aetToConfig.TryGetValue(aet.Trim().ToUpperInvariant(), out var config))
                 return config;
 
             _logger.LogWarning("No config found for AET: {AET}", aet);
@@ -61,7 +62,7 @@ namespace DicomPrintServer.Services
 
         public void RegisterConfig(ListenerConfig config)
         {
-            var primaryAet = config.AET.ToUpperInvariant();
+            var primaryAet = config.AET.Trim().ToUpperInvariant();
             _aetToConfig[primaryAet] = config;
             _logger.LogInformation("Dynamically registered AET {AET} → Port {Port}", primaryAet, config.Port);
 
@@ -72,7 +73,7 @@ namespace DicomPrintServer.Services
                 {
                     if (!string.IsNullOrWhiteSpace(additionalAet))
                     {
-                        var aet = additionalAet.ToUpperInvariant();
+                        var aet = additionalAet.Trim().ToUpperInvariant();
                         _aetToConfig[aet] = config;
                         _logger.LogInformation("Dynamically registered additional AET {AET} → Port {Port} (same as {PrimaryAET})",
                             aet, config.Port, primaryAet);
@@ -83,7 +84,8 @@ namespace DicomPrintServer.Services
 
         public void UnregisterConfig(string aet)
         {
-            _aetToConfig.TryRemove(aet.ToUpperInvariant(), out _);
+            if (string.IsNullOrEmpty(aet)) return;
+            _aetToConfig.TryRemove(aet.Trim().ToUpperInvariant(), out _);
             _logger.LogInformation("Unregistered AET {AET}", aet);
         }
 

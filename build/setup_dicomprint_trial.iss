@@ -43,11 +43,11 @@ Name: "autostart";   Description: "تشغيل لوحة التحكم تلقائي
 
 [Files]
 ; Server (Windows Service)
-Source: "{#ServerDir}\{#ServerExe}"; DestDir: "{app}\Server"; Flags: ignoreversion
+Source: "{#ServerDir}\*"; DestDir: "{app}\Server"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#ServerDir}\appsettings.json"; DestDir: "{commonappdata}\DicomPrintServer"; Flags: ignoreversion onlyifdoesntexist
 
 ; Client GUI (Control Panel)
-Source: "{#ClientDir}\{#ClientExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#ClientDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\DICOM Print Server — لوحة التحكم";  Filename: "{app}\{#ClientExe}"

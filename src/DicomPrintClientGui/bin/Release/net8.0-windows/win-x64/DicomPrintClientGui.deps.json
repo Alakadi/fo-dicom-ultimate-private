@@ -10,7 +10,6 @@
       "DicomPrintClientGui/1.0.0": {
         "dependencies": {
           "Microsoft.Data.Sqlite": "8.0.0",
-          "Microsoft.NET.ILLink.Tasks": "8.0.0-rc.1.23419.4",
           "Microsoft.Web.WebView2": "1.0.3124.44",
           "System.Text.Json": "8.0.5",
           "Microsoft.Web.WebView2.Core": "1.0.3124.44",
@@ -981,7 +980,6 @@
           }
         }
       },
-      "Microsoft.NET.ILLink.Tasks/8.0.0-rc.1.23419.4": {},
       "Microsoft.Web.WebView2/1.0.3124.44": {
         "native": {
           "runtimes/win-x64/native/WebView2Loader.dll": {
@@ -1094,13 +1092,6 @@
       "sha512": "sha512-pujbzfszX7jAl7oTbHhqx7pxd9jibeyHHl8zy1gd55XMaKWjDtc5XhhNYwQnrwWYCInNdVoArbaaAvLgW7TwuA==",
       "path": "microsoft.data.sqlite.core/8.0.0",
       "hashPath": "microsoft.data.sqlite.core.8.0.0.nupkg.sha512"
-    },
-    "Microsoft.NET.ILLink.Tasks/8.0.0-rc.1.23419.4": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-Te369WOsPH7E7PRtGi9/0+IRVD9BhmMQgVp4OmXVfDrna29E35bE08WKED0/15VwJ28vVd5+JbtKYZrwO3PXQg==",
-      "path": "microsoft.net.illink.tasks/8.0.0-rc.1.23419.4",
-      "hashPath": "microsoft.net.illink.tasks.8.0.0-rc.1.23419.4.nupkg.sha512"
     },
     "Microsoft.Web.WebView2/1.0.3124.44": {
       "type": "package",
