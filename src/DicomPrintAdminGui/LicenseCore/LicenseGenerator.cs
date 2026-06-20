@@ -25,7 +25,7 @@ namespace DicomPrintAdminGui.LicenseCore
         {
             string json    = JsonSerializer.Serialize(payload);
             byte[] data    = Encoding.UTF8.GetBytes(json);
-            byte[] sig     = _rsa.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            byte[] sig     = _rsa.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
 
             // دمج الطول + الـ signature + الـ data
             byte[] lenBytes = BitConverter.GetBytes(sig.Length);   // 4 bytes
@@ -93,7 +93,7 @@ namespace DicomPrintAdminGui.LicenseCore
                 byte[] data = combined[(4 + sigLen)..];
 
                 bool valid = _rsa.VerifyData(data, sig,
-                    HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                    HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
 
                 if (!valid) return null;
 

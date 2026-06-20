@@ -56,7 +56,19 @@ namespace DicomPrintServer.Services
             Directory.CreateDirectory(outputFolder);
 
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
-            var path = Path.Combine(outputFolder, $"Print_{ts}.pdf");
+            
+            string patientName = "Unknown";
+            if (patientInfo != null && !string.IsNullOrEmpty(patientInfo.PatientName))
+                patientName = patientInfo.PatientName;
+            else if (annotationCtx != null && !string.IsNullOrEmpty(annotationCtx.PatientName))
+                patientName = annotationCtx.PatientName;
+
+            // Clean invalid filename characters
+            foreach (char c in Path.GetInvalidFileNameChars())
+                patientName = patientName.Replace(c, '_');
+            patientName = patientName.Replace(' ', '_');
+
+            var path = Path.Combine(outputFolder, $"{patientName}_{ts}.pdf");
 
             try
             {
@@ -174,7 +186,7 @@ namespace DicomPrintServer.Services
                     if (_patientInfo != null)
                     {
                         col.Item().Text("بيانات المريض:").FontSize(14).Bold().FontColor(Colors.Grey.Darken2);
-                        col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new[]
+                        col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new (string Label, string? Value)[]
                         {
                             ("الاسم", _patientInfo.PatientName),
                             ("رقم المريض", _patientInfo.PatientId),
@@ -184,12 +196,22 @@ namespace DicomPrintServer.Services
                         }));
                         col.Item().PaddingTop(15);
                     }
+                    else if (_annotationCtx != null && (!string.IsNullOrEmpty(_annotationCtx.PatientName) || !string.IsNullOrEmpty(_annotationCtx.PatientId)))
+                    {
+                        col.Item().Text("بيانات المريض:").FontSize(14).Bold().FontColor(Colors.Grey.Darken2);
+                        col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new (string Label, string? Value)[]
+                        {
+                            ("الاسم", _annotationCtx.PatientName),
+                            ("رقم المريض", _annotationCtx.PatientId)
+                        }));
+                        col.Item().PaddingTop(15);
+                    }
 
                     // Study info from FilmSession
                     if (_annotationCtx != null)
                     {
                         col.Item().Text("معلومات الدراسة:").FontSize(14).Bold().FontColor(Colors.Grey.Darken2);
-                        col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new[]
+                        col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new (string Label, string? Value)[]
                         {
                             ("تاريخ الدراسة", _annotationCtx.StudyDate),
                             ("النمط (Modality)", _annotationCtx.Modality),
@@ -201,7 +223,7 @@ namespace DicomPrintServer.Services
 
                     // Print info
                     col.Item().Text("معلومات الطباعة:").FontSize(14).Bold().FontColor(Colors.Grey.Darken2);
-                    col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new[]
+                    col.Item().PaddingTop(5).Element(c => ComposeInfoTable(c, new (string Label, string? Value)[]
                     {
                         ("AET الطابعة", _config.AET),
                         ("تاريخ الطباعة", DateTime.Now.ToString("yyyy-MM-dd HH:mm")),

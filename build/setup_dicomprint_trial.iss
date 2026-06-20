@@ -1,6 +1,6 @@
 ; ================================================================
 ; DICOM Print Server — مثبّت موحّد (خدمة + لوحة تحكم)
-; نسخة تجريبية 8 ساعات
+; نسخة تجريبية 4 أيام
 ; ================================================================
 
 #define AppName      "DICOM Print Server"
@@ -13,7 +13,7 @@
 #define OutDir       "..\build\output\installers"
 
 [Setup]
-AppId={{DCMP-UNIFIED-TRIAL-2024-8H}}
+AppId={{DCMP-UNIFIED-TRIAL-2024-4D}}
 AppName={#AppName} (تجريبية)
 AppVersion={#AppVersion}
 AppPublisherURL=https://example.com
@@ -78,7 +78,7 @@ var
   Lbl: TLabel;
   Page: TWizardPage;
 begin
-  Page := CreateCustomPage(wpWelcome, 'مرحباً بك في DICOM Print Server', 'نسخة تجريبية - 8 ساعات');
+  Page := CreateCustomPage(wpWelcome, 'مرحباً بك في DICOM Print Server', 'نسخة تجريبية - 4 أيام');
   Lbl := TLabel.Create(Page);
   Lbl.Parent := Page.Surface;
   Lbl.Left := 0; Lbl.Top := 10;
@@ -89,6 +89,6 @@ begin
     'سيتم تثبيت مكونين:' + #13#10 + #13#10 +
     '1) خدمة DICOM (تعمل تلقائياً 24/7 في الخلفية)' + #13#10 +
     '2) لوحة التحكم (أيقونة في شريط المهام)' + #13#10 + #13#10 +
-    'هذه نسخة تجريبية صالحة 8 ساعات من أول تشغيل.' + #13#10 +
+    'هذه نسخة تجريبية صالحة لمدة 4 أيام (96 ساعة) من أول تشغيل.' + #13#10 +
     'بعد انتهاء الفترة يتوقف البرنامج تلقائياً.';
 end;

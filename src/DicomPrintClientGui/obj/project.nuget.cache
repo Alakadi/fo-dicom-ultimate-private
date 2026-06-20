@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "1PBCsn3Rpw4PKu+egFG3FsAohno1X3SnarTy+ACO2U3YuMNSEVEv1yIS+o10LxZY0O73IkdxNG1N4NHmWYJ6jw==",
+  "dgSpecHash": "QfUBE8UkvJoGJfGNzoM9EoQ+pZds3Q7ZkqYlQIshUgBd8/ZnCUd/KGfvs1PjgNYMEpAoAlvy3B4joT4IvQW2kg==",
   "success": true,
-  "projectFilePath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
+  "projectFilePath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintClientGui\\DicomPrintClientGui.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.data.sqlite\\8.0.0\\microsoft.data.sqlite.8.0.0.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.data.sqlite.core\\8.0.0\\microsoft.data.sqlite.core.8.0.0.nupkg.sha512",

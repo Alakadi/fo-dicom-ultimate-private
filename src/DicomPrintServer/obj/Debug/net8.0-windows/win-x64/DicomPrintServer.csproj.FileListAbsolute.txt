@@ -643,3 +643,6 @@ D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Debug\net8.0-windo
 D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Debug\net8.0-windows\win-x64\System.Security.Cryptography.Xml.dll
 D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Debug\net8.0-windows\win-x64\System.Threading.RateLimiting.dll
 D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Debug\net8.0-windows\win-x64\aspnetcorev2_inprocess.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Debug\net8.0-windows\win-x64\Microsoft.Extensions.Http.Polly.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Debug\net8.0-windows\win-x64\Polly.dll
+D:\fodicom\fo-dicom-ultimate-private\src\DicomPrintServer\bin\Debug\net8.0-windows\win-x64\Polly.Extensions.Http.dll

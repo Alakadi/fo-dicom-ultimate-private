@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "L4F0aC77mxThCey6TWxrP9vKBy2HBB2v2BePPQQ0lnF/2R/YfvecG10NlqfrQRAiX2nhm9pYYq42CuFbrD5R2A==",
+  "dgSpecHash": "SWHExtN7GeROjucEgYmdUu+FsFywiu9DT5wysSXSfyK9Nl6q7cbBbGAVJgl4yrjUySPWAEIizmHm22RdtwhpZQ==",
   "success": true,
-  "projectFilePath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
+  "projectFilePath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\DELL\\.nuget\\packages\\communitytoolkit.highperformance\\8.4.0\\communitytoolkit.highperformance.8.4.0.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\fo-dicom\\5.2.5\\fo-dicom.5.2.5.nupkg.sha512",
@@ -31,6 +31,8 @@
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.hosting\\8.0.1\\microsoft.extensions.hosting.8.0.1.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.hosting.abstractions\\8.0.1\\microsoft.extensions.hosting.abstractions.8.0.1.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.hosting.windowsservices\\8.0.1\\microsoft.extensions.hosting.windowsservices.8.0.1.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.http\\8.0.0\\microsoft.extensions.http.8.0.0.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.http.polly\\8.0.0\\microsoft.extensions.http.polly.8.0.0.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.logging\\8.0.1\\microsoft.extensions.logging.8.0.1.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\8.0.2\\microsoft.extensions.logging.abstractions.8.0.2.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.extensions.logging.configuration\\8.0.1\\microsoft.extensions.logging.configuration.8.0.1.nupkg.sha512",
@@ -44,6 +46,8 @@
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.netcore.platforms\\1.1.0\\microsoft.netcore.platforms.1.1.0.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.win32.systemevents\\8.0.0\\microsoft.win32.systemevents.8.0.0.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\netstandard.library\\2.0.0\\netstandard.library.2.0.0.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\polly\\7.2.4\\polly.7.2.4.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\polly.extensions.http\\3.0.0\\polly.extensions.http.3.0.0.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\questpdf\\2024.12.1\\questpdf.2024.12.1.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\serilog\\3.1.1\\serilog.3.1.1.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\serilog.aspnetcore\\8.0.1\\serilog.aspnetcore.8.0.1.nupkg.sha512",
@@ -71,9 +75,9 @@
     "C:\\Users\\DELL\\.nuget\\packages\\system.text.encodings.web\\8.0.0\\system.text.encodings.web.8.0.0.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\system.text.json\\8.0.6\\system.text.json.8.0.6.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\system.threading.channels\\8.0.0\\system.threading.channels.8.0.0.nupkg.sha512",
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.0-rc.1.23421.29\\microsoft.aspnetcore.app.runtime.win-x64.8.0.0-rc.1.23421.29.nupkg.sha512",
     "C:\\Users\\DELL\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\8.0.0-rc.1.23419.4\\microsoft.netcore.app.runtime.win-x64.8.0.0-rc.1.23419.4.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.0-rc.1.23420.5\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.0-rc.1.23420.5.nupkg.sha512",
-    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.0-rc.1.23421.29\\microsoft.aspnetcore.app.runtime.win-x64.8.0.0-rc.1.23421.29.nupkg.sha512"
+    "C:\\Users\\DELL\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.0-rc.1.23420.5\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.0-rc.1.23420.5.nupkg.sha512"
   ],
   "logs": []
 }

@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\DicomPrintAdminGui.csproj": {}
+    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\DicomPrintAdminGui.csproj": {}
   },
   "projects": {
-    "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\DicomPrintAdminGui.csproj": {
+    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\DicomPrintAdminGui.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\DicomPrintAdminGui.csproj",
+        "projectUniqueName": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\DicomPrintAdminGui.csproj",
         "projectName": "DicomPrintAdminGui",
-        "projectPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\DicomPrintAdminGui.csproj",
+        "projectPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\DicomPrintAdminGui.csproj",
         "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
-        "outputPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\obj\\",
+        "outputPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintAdminGui\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config"

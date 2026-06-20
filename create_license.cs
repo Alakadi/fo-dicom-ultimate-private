@@ -20,7 +20,7 @@ string payloadJson = JsonSerializer.Serialize(payload, new JsonSerializerOptions
 
 using var rsa = RSA.Create();
 rsa.ImportFromPem(privateKeyPem);
-byte[] signature = rsa.SignData(Encoding.UTF8.GetBytes(payloadJson), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+byte[] signature = rsa.SignData(Encoding.UTF8.GetBytes(payloadJson), HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
 
 payload["Signature"] = Convert.ToBase64String(signature);
 

@@ -28,7 +28,7 @@ namespace DicomPrintServer.Services
     /// </summary>
     public class TrialManager
     {
-        private const int    TrialHours         = 72;            // مدة التجربة بالساعات
+        private const int    TrialHours         = 96;            // مدة التجربة بالساعات (4 أيام)
         private const int    MaxOperations      = 50;
         private const int    ClockToleranceMins = 5;
         private const int    NtpTimeoutMs       = 3000;

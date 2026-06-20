@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("DICOM Print Server — Client Control Panel")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e61c3aecb1e1dff6209ea12fb30f79a7e4002629")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+cd3bfc3dc77fbb653455748280e7bbae41a9334c")]
 [assembly: System.Reflection.AssemblyProductAttribute("DicomPrintClientGui")]
 [assembly: System.Reflection.AssemblyTitleAttribute("DicomPrintClientGui")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

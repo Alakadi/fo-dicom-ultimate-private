@@ -240,8 +240,9 @@ namespace DicomPrintServer.Services
                 new JsonSerializerOptions { WriteIndented = false });
 
             byte[] payloadBytes = Encoding.UTF8.GetBytes(payloadJson);
+            // RSA-PSS أكثر أماناً من PKCS#1 v1.5 — موصى به من NIST
             byte[] signature    = rsa.SignData(payloadBytes,
-                HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
 
             // أضف Signature للنهائي
             payloadDict["Signature"] = Convert.ToBase64String(signature);
@@ -260,8 +261,9 @@ namespace DicomPrintServer.Services
                 using var rsa = RSA.Create();
                 rsa.ImportFromPem(PublicKeyPem);
                 byte[] payloadBytes = Encoding.UTF8.GetBytes(payload);
+                // RSA-PSS أكثر أماناً من PKCS#1 v1.5 — موصى به من NIST
                 return rsa.VerifyData(payloadBytes, signature,
-                    HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                    HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
             }
             catch (Exception ex)
             {

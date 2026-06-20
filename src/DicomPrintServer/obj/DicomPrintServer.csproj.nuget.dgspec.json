@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {}
+    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {}
   },
   "projects": {
-    "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {
+    "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
+        "projectUniqueName": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
         "projectName": "DicomPrintServer",
-        "projectPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
+        "projectPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\DicomPrintServer.csproj",
         "packagesPath": "C:\\Users\\DELL\\.nuget\\packages\\",
-        "outputPath": "d:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\obj\\",
+        "outputPath": "D:\\fodicom\\fo-dicom-ultimate-private\\src\\DicomPrintServer\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\DELL\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -53,6 +53,10 @@
             "Microsoft.Extensions.Hosting.WindowsServices": {
               "target": "Package",
               "version": "[8.0.1, )"
+            },
+            "Microsoft.Extensions.Http.Polly": {
+              "target": "Package",
+              "version": "[8.0.0, )"
             },
             "Microsoft.Extensions.Logging.Console": {
               "target": "Package",

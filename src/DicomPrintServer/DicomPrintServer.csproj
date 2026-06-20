@@ -28,6 +28,7 @@
 
     <!-- ImageSharp (cross-platform image rendering) -->
     <PackageReference Include="fo-dicom.Imaging.ImageSharp" Version="5.2.5" />
+    <PackageReference Include="Microsoft.Extensions.Http.Polly" Version="8.0.0" />
     <PackageReference Include="QuestPDF" Version="2024.12.1" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
     <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.4" />

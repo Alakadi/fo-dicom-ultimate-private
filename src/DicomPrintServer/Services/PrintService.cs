@@ -31,6 +31,8 @@ namespace DicomPrintServer.Services
         private readonly PdfSessionManager?   _pdfSessionMgr;
         private readonly IConnectionTracker   _connectionTracker;
         private readonly HisRisClient?        _hisRisClient;
+        private readonly LicenseManager       _licenseManager;
+        private readonly TrialManager         _trialManager;
 
         private FilmSession? _filmSession;
         private DicomPrinter? _printer;
@@ -60,6 +62,8 @@ namespace DicomPrintServer.Services
             _pdfSessionMgr      = dependencies.ServiceProvider.GetService<PdfSessionManager>();
             _connectionTracker  = dependencies.ServiceProvider.GetRequiredService<IConnectionTracker>();
             _hisRisClient       = dependencies.ServiceProvider.GetService<HisRisClient>();
+            _licenseManager     = dependencies.ServiceProvider.GetRequiredService<LicenseManager>();
+            _trialManager       = dependencies.ServiceProvider.GetRequiredService<TrialManager>();
         }
 
         #region IDicomServiceProvider
@@ -486,6 +490,15 @@ namespace DicomPrintServer.Services
                     {
                         SendNEventReport = _sendEventReports
                     };
+
+                    if (_licenseManager.IsTrialMode)
+                    {
+                        if (!_trialManager.RegisterOperation())
+                        {
+                            Logger.LogError("Trial period expired or tampered. Print job rejected.");
+                            return Task.FromResult(new DicomNActionResponse(request, DicomStatus.ProcessingFailure));
+                        }
+                    }
 
                     printJob.StatusUpdate += OnPrintJobStatusUpdate;
                     _printJobs[printJob.SOPInstanceUID.UID] = printJob;

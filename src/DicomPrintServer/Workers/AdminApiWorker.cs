@@ -41,6 +41,7 @@ namespace DicomPrintServer.Workers
         private readonly MWLConfig                 _mwlConfig;
         private readonly MWLMonitor                _mwlMonitor;
         private readonly MultiPortManager          _multiPortManager;
+        private readonly AdminRateLimiter          _rateLimiter;
         private HttpListener?                      _listener;
         private readonly ConcurrentDictionary<string, WebSocket> _wsClients = new();
         private Timer? _wsBroadcastTimer;
@@ -54,6 +55,7 @@ namespace DicomPrintServer.Workers
             IWorklistSource           worklistSource,
             MWLMonitor                mwlMonitor,
             MultiPortManager          multiPortManager,
+            AdminRateLimiter          rateLimiter,
             PrintRepository?          repo = null)
         {
             _monitor           = monitor;
@@ -66,6 +68,7 @@ namespace DicomPrintServer.Workers
             _mwlConfig         = options.Value.MWL;
             _mwlMonitor        = mwlMonitor;
             _multiPortManager  = multiPortManager;
+            _rateLimiter       = rateLimiter;
         }
 
         // مسار ملف الإعدادات
@@ -144,13 +147,36 @@ namespace DicomPrintServer.Workers
                     return;
                 }
 
-                // Basic Auth (إذا كانت كلمة مرور مضبوطة)
-                if (!string.IsNullOrEmpty(_cfg.AdminPasswordHash) && !IsAuthorized(req))
+                // Rate Limiting (عام)
+                string clientIp = req.RemoteEndPoint?.Address?.ToString() ?? "unknown";
+                if (!_rateLimiter.IsAllowed(clientIp))
                 {
-                    resp.StatusCode = 401;
-                    resp.Headers.Add("WWW-Authenticate", "Basic realm=\"DICOM Admin\"");
-                    await WriteText(resp, "Unauthorized", "text/plain");
+                    _logger.LogWarning("Admin API: General rate limit exceeded for IP {IP}", clientIp);
+                    resp.StatusCode = 429;
+                    resp.Headers.Add("Retry-After", "60");
+                    await WriteText(resp, "Too Many Requests - Rate limit exceeded. Try again in a minute.", "text/plain");
                     return;
+                }
+
+                // Basic Auth (إذا كانت كلمة مرور مضبوطة)
+                if (!string.IsNullOrEmpty(_cfg.AdminPasswordHash))
+                {
+                    if (!IsAuthorized(req))
+                    {
+                        if (!_rateLimiter.IsAuthAllowed(clientIp))
+                        {
+                            _logger.LogWarning("Admin API: Auth rate limit exceeded for IP {IP}", clientIp);
+                            resp.StatusCode = 429;
+                            resp.Headers.Add("Retry-After", "30");
+                            await WriteText(resp, "Too Many Failed Authentication Attempts. Try again in 30 seconds.", "text/plain");
+                            return;
+                        }
+
+                        resp.StatusCode = 401;
+                        resp.Headers.Add("WWW-Authenticate", "Basic realm=\"DICOM Admin\"");
+                        await WriteText(resp, "Unauthorized", "text/plain");
+                        return;
+                    }
                 }
 
                 string path = req.Url?.AbsolutePath.TrimEnd('/') ?? "/";

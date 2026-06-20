@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
 using System.IO;
+using Polly;
 
 // ============================================================
 // DICOM Print Server — نقطة الدخول الرئيسية
@@ -97,6 +98,7 @@ try
             services.AddSingleton<JpgExporter>();
             services.AddSingleton<PdfExporter>();
             services.AddSingleton<PrintMonitor>();
+            services.AddSingleton<AdminRateLimiter>();
             services.AddSingleton<LicenseManager>();
             services.AddSingleton<TrialManager>();
             services.AddSingleton<SecurityGuard>();
@@ -105,7 +107,9 @@ try
             services.AddHttpClient<WhatsAppNotifier>(client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(30);
-            });
+            })
+            .AddTransientHttpErrorPolicy(policy => policy.WaitAndRetryAsync(3, retryAttempt =>
+                TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))));
             services.AddSingleton<MultiPortManager>();
             services.AddSingleton<PdfSessionManager>();
             services.AddSingleton<IConnectionTracker, ConnectionTracker>();

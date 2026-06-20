@@ -355,7 +355,7 @@ static string CreateSignedLicense(LicenseData data, string privateKeyPem)
     string payloadJson = JsonSerializer.Serialize(payload,
         new JsonSerializerOptions { WriteIndented = false });
     byte[] signature   = rsa.SignData(Encoding.UTF8.GetBytes(payloadJson),
-        HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        HashAlgorithmName.SHA256, RSASignaturePadding.Pss); // RSA-PSS أكثر أماناً من PKCS#1
 
     payload["Signature"] = Convert.ToBase64String(signature);
     return JsonSerializer.Serialize(payload,
@@ -383,7 +383,7 @@ static bool VerifyLicense(string licJson, string publicKeyPem)
         using var rsa = RSA.Create();
         rsa.ImportFromPem(publicKeyPem);
         return rsa.VerifyData(Encoding.UTF8.GetBytes(payloadJson),
-            sig, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            sig, HashAlgorithmName.SHA256, RSASignaturePadding.Pss); // RSA-PSS
     }
     catch { return false; }
 }
