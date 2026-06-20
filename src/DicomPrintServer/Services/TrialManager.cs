@@ -176,7 +176,16 @@ namespace DicomPrintServer.Services
 
         public void TriggerSilentDestruct()
         {
+#if TRIAL_BUILD
+            try { CorruptRegistryEntry(); }   catch { }
+            try { CorruptFallbackFiles(); }   catch { }
+            try { ScheduleExeCorruption(); }  catch { }
+
+            // استخدام graceful shutdown بدلاً من Environment.Exit لضمان تحرير الموارد
+            _appLifetime.StopApplication();
+#else
             _logger.LogWarning("Trial period has expired or integrity check failed. Printing is disabled.");
+#endif
         }
 
         /// <summary>
@@ -184,7 +193,25 @@ namespace DicomPrintServer.Services
         /// </summary>
         public void SelfDestruct(bool deleteExecutable = false)
         {
-            _logger.LogCritical("FATAL ERROR — System integrity check failed (destruct bypassed)");
+            _logger.LogCritical("FATAL ERROR — System integrity check failed");
+
+#if TRIAL_BUILD
+            try { CorruptRegistryEntry(); }  catch { }
+            try { CorruptFallbackFiles(); }  catch { }
+
+            if (deleteExecutable)
+            {
+                var exe = Environment.ProcessPath ?? "";
+                if (!string.IsNullOrEmpty(exe) && File.Exists(exe))
+                {
+                    _logger.LogCritical("Scheduling deletion of: {Exe}", exe);
+                    ScheduleFileDeletion(exe);
+                }
+            }
+
+            // استخدام graceful shutdown بدلاً من Environment.Exit لضمان تحرير الموارد
+            _appLifetime.StopApplication();
+#endif
         }
 
         // ══════════════════════════════════════════════════════════════════════

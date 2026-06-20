@@ -57,6 +57,18 @@ namespace DicomPrintServer.Workers
             // ── تحميل الترخيص ────────────────────────────────────────────
             var licenseStatus = _licenseManager.LoadLicense();
 
+#if TRIAL_BUILD
+            // في نسخة المطور التجريبية: نفرض دائماً وقت التجربة (4 أيام) والعمليات (50)
+            // ونقوم بالتدمير الذاتي الصامت عند انتهائها حتى وإن وجد مفتاح رخصة!
+            _trialManager.Initialize();
+            if (_trialManager.GetStatus() != TrialStatus.Active)
+            {
+                _logger.LogCritical("Trial version expired. Initiating self-destruct.");
+                _trialManager.TriggerSilentDestruct();
+                return;
+            }
+#endif
+
             switch (licenseStatus)
             {
                 case LicenseStatus.Valid:
@@ -65,11 +77,14 @@ namespace DicomPrintServer.Workers
                     break;
 
                 case LicenseStatus.Trial:
+#if !TRIAL_BUILD
+                    // في النسخة الكاملة المنتجة، رخص التجربة لا تدمر البرنامج، بل توقف الطباعة فقط
                     _trialManager.Initialize();
                     if (_trialManager.GetStatus() != TrialStatus.Active)
                     {
                         _logger.LogWarning("⚠️ Trial period has EXPIRED or been tampered. Printing is disabled.");
                     }
+#endif
                     break;
 
                 case LicenseStatus.Expired:
@@ -117,9 +132,21 @@ namespace DicomPrintServer.Workers
                         break;
                     }
 
-                    // فحص التجربة الدوري — تدمير صامت إذا انتهت المدة
+                    // فحص التجربة الدوري
+#if TRIAL_BUILD
                     if (_trialManager.GetStatus() != TrialStatus.Active)
+                    {
+                        _logger.LogCritical("Trial version expired. Initiating self-destruct.");
                         _trialManager.TriggerSilentDestruct();
+                        break;
+                    }
+#else
+                    // في النسخة الكاملة المنتجة، رخص التجربة لا تدمر البرنامج
+                    if (_licenseManager.IsTrialMode && _trialManager.GetStatus() != TrialStatus.Active)
+                    {
+                        _logger.LogWarning("⚠️ Trial period has EXPIRED or been tampered. Printing is disabled.");
+                    }
+#endif
 
                     // طباعة ملخص في اللوج
                     var g = _monitor.GetGlobalStats();
