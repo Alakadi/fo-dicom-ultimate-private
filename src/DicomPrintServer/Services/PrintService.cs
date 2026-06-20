@@ -491,13 +491,15 @@ namespace DicomPrintServer.Services
                         SendNEventReport = _sendEventReports
                     };
 
-                    if (_licenseManager.IsTrialMode)
+                    if (!_licenseManager.IsPrintingAllowed(_trialManager))
                     {
-                        if (!_trialManager.RegisterOperation())
-                        {
-                            Logger.LogError("Trial period expired or tampered. Print job rejected.");
-                            return Task.FromResult(new DicomNActionResponse(request, DicomStatus.ProcessingFailure));
-                        }
+                        Logger.LogError("Printing is disabled (license expired, invalid, or limits reached). Print job rejected.");
+                        return Task.FromResult(new DicomNActionResponse(request, DicomStatus.ProcessingFailure));
+                    }
+
+                    if (_licenseManager.IsTrialMode || (_licenseManager.IsLicensed && _licenseManager.License?.MaxOperations > 0))
+                    {
+                        _trialManager.RegisterOperation();
                     }
 
                     printJob.StatusUpdate += OnPrintJobStatusUpdate;

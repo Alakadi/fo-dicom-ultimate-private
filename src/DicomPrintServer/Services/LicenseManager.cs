@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 
 namespace DicomPrintServer.Services
@@ -115,6 +116,12 @@ namespace DicomPrintServer.Services
         /// <summary>يتحقق من نص JSON للترخيص (بدون قراءة ملف).</summary>
         public LicenseStatus VerifyAndLoad(string licenseJson)
         {
+            var trimmed = licenseJson.Trim();
+            if (trimmed.StartsWith("DCMP") || !trimmed.StartsWith("{"))
+            {
+                return VerifyAndLoadFormattedKey(trimmed);
+            }
+
             try
             {
                 var doc  = JsonDocument.Parse(licenseJson);
@@ -271,6 +278,117 @@ namespace DicomPrintServer.Services
                 return false;
             }
         }
+
+        private LicenseStatus VerifyAndLoadFormattedKey(string formattedKey)
+        {
+            try
+            {
+                string body = formattedKey.Replace("-", "").Replace("DCMP", "").Trim();
+                body = body.Replace('A', '+').Replace('B', '/').Replace('C', '=');
+                byte[] combined = Convert.FromBase64String(body);
+
+                int sigLen = BitConverter.ToInt32(combined, 0);
+                byte[] sig  = combined[4..(4 + sigLen)];
+                byte[] dataBytes = combined[(4 + sigLen)..];
+
+                using var rsa = RSA.Create();
+                rsa.ImportFromPem(PublicKeyPem);
+                bool valid = rsa.VerifyData(dataBytes, sig,
+                    HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+
+                if (!valid)
+                {
+                    _logger.LogError("DCMP license key signature verification failed — tampered or invalid key");
+                    _status = LicenseStatus.Invalid;
+                    return _status;
+                }
+
+                string json = Encoding.UTF8.GetString(dataBytes);
+                var payload = JsonSerializer.Deserialize<LicensePayloadDto>(json,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                if (payload == null)
+                {
+                    _status = LicenseStatus.Invalid;
+                    return _status;
+                }
+
+                // Check Expiry Date (Unix Timestamp)
+                DateTime? expiresAt = null;
+                if (payload.ExpiresAt.HasValue)
+                {
+                    expiresAt = DateTimeOffset.FromUnixTimeSeconds(payload.ExpiresAt.Value).UtcDateTime;
+                    if (expiresAt.Value < DateTime.UtcNow)
+                    {
+                        _logger.LogError("DCMP license key expired on {Date}", expiresAt.Value);
+                        _status = LicenseStatus.Expired;
+                        _activeLicense = new LicenseData { CustomerId = payload.Id, CustomerName = payload.IssuedTo, ExpiresAt = expiresAt };
+                        return _status;
+                    }
+                }
+
+                var data = new LicenseData
+                {
+                    CustomerId = payload.Id,
+                    CustomerName = payload.IssuedTo,
+                    LicenseType = payload.ExpiresAt.HasValue || payload.MaxOps > 0 ? "Trial" : "Full",
+                    IssuedAt = DateTimeOffset.FromUnixTimeSeconds(payload.IssuedAt).UtcDateTime,
+                    ExpiresAt = expiresAt,
+                    MaxPorts = 0, // unlimited in formatted keys
+                    MaxOperations = payload.MaxOps == -1 ? 0 : payload.MaxOps,
+                    Features = payload.Features,
+                    Watermark = payload.Watermark,
+                    HwLock = payload.HwLock,
+                    HwId = payload.HwId
+                };
+
+                _activeLicense = data;
+                _status = data.LicenseType == "Trial"
+                    ? LicenseStatus.Trial
+                    : LicenseStatus.Valid;
+
+                return _status;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "DCMP formatted license verification threw an exception");
+                _status = LicenseStatus.Invalid;
+                return _status;
+            }
+        }
+
+        public bool IsPrintingAllowed(TrialManager trialManager)
+        {
+            if (_status == LicenseStatus.Expired || _status == LicenseStatus.Invalid || _status == LicenseStatus.NotLoaded)
+                return false;
+
+            if (_status == LicenseStatus.Valid)
+            {
+                if (_activeLicense != null && _activeLicense.MaxOperations > 0)
+                {
+                    trialManager.SyncLicenseKeyId(_activeLicense.CustomerId);
+                    if (trialManager.OperationCount >= _activeLicense.MaxOperations)
+                        return false;
+                }
+                return true;
+            }
+
+            if (_status == LicenseStatus.Trial)
+            {
+                if (trialManager.GetStatus() != TrialStatus.Active)
+                    return false;
+
+                if (_activeLicense != null && _activeLicense.MaxOperations > 0)
+                {
+                    trialManager.SyncLicenseKeyId(_activeLicense.CustomerId);
+                    if (trialManager.OperationCount >= _activeLicense.MaxOperations)
+                        return false;
+                }
+                return true;
+            }
+
+            return false;
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -285,8 +403,48 @@ namespace DicomPrintServer.Services
         public DateTime IssuedAt     { get; set; } = DateTime.UtcNow;
         public DateTime? ExpiresAt   { get; set; }
         public int      MaxPorts     { get; set; } = 1;
+        public int      MaxOperations { get; set; } = 0;
         public List<string>? Features { get; set; }             // null = all
         public string?  Signature    { get; set; }
+        public bool     Watermark    { get; set; } = false;
+        public bool     HwLock       { get; set; } = false;
+        public string?  HwId         { get; set; }
+    }
+
+    internal class LicensePayloadDto
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = "";
+
+        [JsonPropertyName("issued_to")]
+        public string IssuedTo { get; set; } = "";
+
+        [JsonPropertyName("email")]
+        public string? Email { get; set; }
+
+        [JsonPropertyName("issued_at")]
+        public long IssuedAt { get; set; }
+
+        [JsonPropertyName("expires_at")]
+        public long? ExpiresAt { get; set; }
+
+        [JsonPropertyName("max_ops")]
+        public int MaxOps { get; set; } = 500;
+
+        [JsonPropertyName("features")]
+        public List<string> Features { get; set; } = new();
+
+        [JsonPropertyName("hw_lock")]
+        public bool HwLock { get; set; } = false;
+
+        [JsonPropertyName("hw_id")]
+        public string? HwId { get; set; }
+
+        [JsonPropertyName("tier")]
+        public string Tier { get; set; } = "BASIC";
+
+        [JsonPropertyName("watermark")]
+        public bool Watermark { get; set; } = false;
     }
 
     public enum LicenseStatus

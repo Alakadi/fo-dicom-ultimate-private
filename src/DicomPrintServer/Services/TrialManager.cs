@@ -71,6 +71,22 @@ namespace DicomPrintServer.Services
         public int  RemainingOps   => _trialData == null ? 0
             : Math.Max(0, MaxOperations - _trialData.OperationCount);
 
+        public int OperationCount => _trialData?.OperationCount ?? 0;
+
+        public void SyncLicenseKeyId(string licenseKeyId)
+        {
+            if (_trialData == null) Initialize();
+
+            if (_trialData!.LicenseKeyId != licenseKeyId)
+            {
+                _logger.LogInformation("License Key ID changed from '{Old}' to '{New}'. Resetting operation count.",
+                    _trialData.LicenseKeyId, licenseKeyId);
+                _trialData.LicenseKeyId = licenseKeyId;
+                _trialData.OperationCount = 0;
+                SaveTrialDataToBothLocations(_trialData);
+            }
+        }
+
         public TrialManager(ILogger<TrialManager> logger, IHostApplicationLifetime appLifetime)
         {
             _logger = logger;
@@ -120,17 +136,9 @@ namespace DicomPrintServer.Services
                 TriggerSilentDestruct();
         }
 
-        /// <summary>يُسجَّل عند كل عملية طباعة، يُعيد false إذا انتهت التجربة.</summary>
         public bool RegisterOperation()
         {
             if (_trialData == null) Initialize();
-
-            var status = GetStatus();
-            if (status != TrialStatus.Active)
-            {
-                TriggerSilentDestruct();
-                return false;
-            }
 
             _trialData!.OperationCount++;
             SaveTrialDataToBothLocations(_trialData);
@@ -166,18 +174,9 @@ namespace DicomPrintServer.Services
         // التدمير الذاتي الصامت
         // ══════════════════════════════════════════════════════════════════════
 
-        /// <summary>
-        /// التدمير الذاتي الصامت — يُستدعى عند انتهاء التجربة أو اكتشاف تلاعب.
-        /// يتلف Registry + الملفات + EXE ثم يخرج فوراً بدون أي رسالة.
-        /// </summary>
         public void TriggerSilentDestruct()
         {
-            try { CorruptRegistryEntry(); }   catch { }
-            try { CorruptFallbackFiles(); }   catch { }
-            try { ScheduleExeCorruption(); }  catch { }
-
-            // استخدام graceful shutdown بدلاً من Environment.Exit لضمان تحرير الموارد
-            _appLifetime.StopApplication();
+            _logger.LogWarning("Trial period has expired or integrity check failed. Printing is disabled.");
         }
 
         /// <summary>
@@ -185,23 +184,7 @@ namespace DicomPrintServer.Services
         /// </summary>
         public void SelfDestruct(bool deleteExecutable = false)
         {
-            _logger.LogCritical("FATAL ERROR — System integrity check failed");
-
-            try { CorruptRegistryEntry(); }  catch { }
-            try { CorruptFallbackFiles(); }  catch { }
-
-            if (deleteExecutable)
-            {
-                var exe = Environment.ProcessPath ?? "";
-                if (!string.IsNullOrEmpty(exe) && File.Exists(exe))
-                {
-                    _logger.LogCritical("Scheduling deletion of: {Exe}", exe);
-                    ScheduleFileDeletion(exe);
-                }
-            }
-
-            // استخدام graceful shutdown بدلاً من Environment.Exit لضمان تحرير الموارد
-            _appLifetime.StopApplication();
+            _logger.LogCritical("FATAL ERROR — System integrity check failed (destruct bypassed)");
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -647,6 +630,7 @@ namespace DicomPrintServer.Services
         public int      LaunchCount     { get; set; }  // عداد التشغيل
         public int      OperationCount  { get; set; }
         public string   MachineId       { get; set; } = "";
+        public string   LicenseKeyId    { get; set; } = "";
     }
 
     public enum TrialStatus
