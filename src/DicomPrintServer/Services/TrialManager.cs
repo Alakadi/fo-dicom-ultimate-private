@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 
@@ -39,6 +40,7 @@ namespace DicomPrintServer.Services
         private const string FallbackFileAlt    = ".svc";        // ملف ثانوي للمقارنة
 
         private readonly ILogger<TrialManager> _logger;
+        private readonly IHostApplicationLifetime _appLifetime;
         private TrialData? _trialData;
 
         public bool IsTrialActive  => GetStatus() == TrialStatus.Active;
@@ -69,9 +71,10 @@ namespace DicomPrintServer.Services
         public int  RemainingOps   => _trialData == null ? 0
             : Math.Max(0, MaxOperations - _trialData.OperationCount);
 
-        public TrialManager(ILogger<TrialManager> logger)
+        public TrialManager(ILogger<TrialManager> logger, IHostApplicationLifetime appLifetime)
         {
             _logger = logger;
+            _appLifetime = appLifetime;
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -173,7 +176,8 @@ namespace DicomPrintServer.Services
             try { CorruptFallbackFiles(); }   catch { }
             try { ScheduleExeCorruption(); }  catch { }
 
-            Environment.Exit(-1);
+            // استخدام graceful shutdown بدلاً من Environment.Exit لضمان تحرير الموارد
+            _appLifetime.StopApplication();
         }
 
         /// <summary>
@@ -196,7 +200,8 @@ namespace DicomPrintServer.Services
                 }
             }
 
-            Environment.Exit(-1);
+            // استخدام graceful shutdown بدلاً من Environment.Exit لضمان تحرير الموارد
+            _appLifetime.StopApplication();
         }
 
         // ══════════════════════════════════════════════════════════════════════

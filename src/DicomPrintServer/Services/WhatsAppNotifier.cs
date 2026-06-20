@@ -22,18 +22,21 @@ namespace DicomPrintServer.Services
     /// السيناريو:
     ///   • عند اكتمال مهمة طباعة → يُرسل لرقم الطبيب صورة JPG + بيانات المريض
     ///   • يدعم Template Messages (للإنتاج) وText+Image (للتجربة)
+    ///
+    /// ملاحظة: HttpClient مُحقَن بواسطة IHttpClientFactory (DI) —
+    ///   لا تستخدم DefaultRequestHeaders لتجنّب thread-safety issues.
     /// </summary>
-    public class WhatsAppNotifier : IDisposable
+    public class WhatsAppNotifier
     {
         private readonly ILogger<WhatsAppNotifier> _logger;
         private readonly IOptionsMonitor<PrintServerConfig> _configMonitor;
         private readonly HttpClient _http;
         private readonly ImageHostingService? _imageHosting;
-        private bool _disposed;
 
         private WhatsAppServerConfig _config => _configMonitor.CurrentValue.WhatsApp ?? new WhatsAppServerConfig();
 
         public WhatsAppNotifier(
+            HttpClient http,
             ILogger<WhatsAppNotifier> logger,
             IOptionsMonitor<PrintServerConfig> configMonitor,
             ImageHostingService? imageHosting = null)
@@ -41,10 +44,7 @@ namespace DicomPrintServer.Services
             _logger = logger;
             _configMonitor = configMonitor;
             _imageHosting = imageHosting;
-            _http   = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(30)
-            };
+            _http = http; // مُدار بواسطة IHttpClientFactory — لا تُتلف هنا
         }
 
         // ══════════════════════════════════════════════════════════════════════
@@ -169,12 +169,15 @@ namespace DicomPrintServer.Services
                 }
             }
 
-            var auth = Convert.ToBase64String(
+            // إرسال Authorization في كل طلب بشكل مستقل (thread-safe)
+            string authValue = Convert.ToBase64String(
                 Encoding.ASCII.GetBytes($"{accountSid}:{authToken}"));
-            _http.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Basic", auth);
 
-            var resp = await _http.PostAsync(url, new FormUrlEncodedContent(form), ct);
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Basic", authValue);
+            req.Content = new FormUrlEncodedContent(form);
+
+            var resp = await _http.SendAsync(req, ct);
             string body = await resp.Content.ReadAsStringAsync(ct);
             _logger.LogDebug("Twilio response: {Status}", resp.StatusCode);
             return resp.IsSuccessStatusCode;
@@ -197,9 +200,6 @@ namespace DicomPrintServer.Services
             }
 
             string url = $"https://graph.facebook.com/v18.0/{phoneNumId}/messages";
-            _http.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", token);
-
             string cleanPhone = NormalizePhoneOnlyDigits(phone);
 
             object payload;
@@ -243,8 +243,13 @@ namespace DicomPrintServer.Services
 
             string jsonPayload = JsonSerializer.Serialize(payload);
             var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
-            var resp    = await _http.PostAsync(url, content, ct);
 
+            // Authorization في كل طلب بشكل مستقل (thread-safe)
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            req.Content = content;
+
+            var resp = await _http.SendAsync(req, ct);
             _logger.LogDebug("Meta API response: {Status}", resp.StatusCode);
             return resp.IsSuccessStatusCode;
         }
@@ -253,8 +258,6 @@ namespace DicomPrintServer.Services
             string filePath, string phoneNumId, string token, CancellationToken ct)
         {
             string url = $"https://graph.facebook.com/v18.0/{phoneNumId}/media";
-            _http.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", token);
 
             await using var fileStream = File.OpenRead(filePath);
             using var formData = new MultipartFormDataContent();
@@ -262,7 +265,12 @@ namespace DicomPrintServer.Services
             formData.Add(new StringContent("image/jpeg"), "type");
             formData.Add(new StringContent("whatsapp"), "messaging_product");
 
-            var resp = await _http.PostAsync(url, formData, ct);
+            // Authorization في كل طلب بشكل مستقل (thread-safe)
+            using var req = new HttpRequestMessage(HttpMethod.Post, url);
+            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            req.Content = formData;
+
+            var resp = await _http.SendAsync(req, ct);
             if (!resp.IsSuccessStatusCode) return null;
 
             string body = await resp.Content.ReadAsStringAsync(ct);
@@ -319,12 +327,5 @@ namespace DicomPrintServer.Services
         /// رقم الهاتف الافتراضي من الإعدادات (يُستخدَم عندما لا يُحدَّد رقم مع المهمة).
         /// </summary>
         public string? DefaultRecipientPhone => _config.DefaultRecipientPhone;
-
-        public void Dispose()
-        {
-            if (_disposed) return;
-            _disposed = true;
-            _http.Dispose();
-        }
     }
 }

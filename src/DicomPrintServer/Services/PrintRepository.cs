@@ -15,10 +15,12 @@ namespace DicomPrintServer.Services
     /// </summary>
     public class PrintRepository : IDisposable
     {
-        private readonly string             _dbPath;
-        private readonly ILogger<PrintRepository> _logger;
-        private SqliteConnection?           _conn;
-        private bool                        _disposed;
+        private readonly string                      _dbPath;
+        private readonly ILogger<PrintRepository>    _logger;
+        private SqliteConnection?                    _conn;
+        private bool                                 _disposed;
+        // lock object لضمان thread-safety — SQLite اتصال واحد مشترك بين threads
+        private readonly object                      _dbLock = new();
 
         public PrintRepository(ILogger<PrintRepository> logger, string? dbPath = null)
         {
@@ -92,6 +94,8 @@ namespace DicomPrintServer.Services
             if (_conn == null) return;
             string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
 
+            lock (_dbLock)
+            {
             using var tx = _conn.BeginTransaction();
             try
             {
@@ -121,6 +125,7 @@ namespace DicomPrintServer.Services
                 tx.Rollback();
                 _logger.LogWarning(ex, "DB: RecordSuccess failed");
             }
+            } // end lock
         }
 
         public void RecordFailure(
@@ -129,6 +134,8 @@ namespace DicomPrintServer.Services
             if (_conn == null) return;
             string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
 
+            lock (_dbLock)
+            {
             using var tx = _conn.BeginTransaction();
             try
             {
@@ -155,6 +162,7 @@ namespace DicomPrintServer.Services
                 tx.Rollback();
                 _logger.LogWarning(ex, "DB: RecordFailure failed");
             }
+            } // end lock
         }
 
         private void UpsertDailyCounter(
@@ -198,6 +206,8 @@ namespace DicomPrintServer.Services
             if (_conn == null) return Array.Empty<DbPrintRecord>();
             var list = new List<DbPrintRecord>();
 
+            lock (_dbLock)
+            {
             using var cmd = _conn.CreateCommand();
             cmd.CommandText = """
                 SELECT Id, Timestamp, JobId, AET, PatientId, PatientName,
@@ -209,6 +219,7 @@ namespace DicomPrintServer.Services
             cmd.Parameters.AddWithValue("$n", count);
             using var r = cmd.ExecuteReader();
             while (r.Read()) list.Add(ReadRecord(r));
+            } // end lock
             return list;
         }
 
@@ -219,6 +230,8 @@ namespace DicomPrintServer.Services
             var list = new List<DailyCounterRow>();
             string since = DateTime.UtcNow.AddDays(-days).ToString("yyyy-MM-dd");
 
+            lock (_dbLock)
+            {
             using var cmd = _conn.CreateCommand();
             cmd.CommandText = """
                 SELECT Date, AET, PrintCount, FailCount, TotalPages
@@ -239,6 +252,7 @@ namespace DicomPrintServer.Services
                     TotalPages = r.GetInt32(4)
                 });
             }
+            } // end lock
             return list;
         }
 
@@ -247,6 +261,8 @@ namespace DicomPrintServer.Services
         {
             if (_conn == null) return new DbGlobalTotals();
 
+            lock (_dbLock)
+            {
             using var cmd = _conn.CreateCommand();
             cmd.CommandText = """
                 SELECT
@@ -261,11 +277,12 @@ namespace DicomPrintServer.Services
 
             return new DbGlobalTotals
             {
-                TotalSuccess   = r.IsDBNull(0) ? 0 : r.GetInt64(0),
-                TotalFailed    = r.IsDBNull(1) ? 0 : r.GetInt64(1),
-                TotalPages     = r.IsDBNull(2) ? 0 : r.GetInt64(2),
-                TotalOperations= r.IsDBNull(3) ? 0 : r.GetInt64(3)
+                TotalSuccess    = r.IsDBNull(0) ? 0 : r.GetInt64(0),
+                TotalFailed     = r.IsDBNull(1) ? 0 : r.GetInt64(1),
+                TotalPages      = r.IsDBNull(2) ? 0 : r.GetInt64(2),
+                TotalOperations = r.IsDBNull(3) ? 0 : r.GetInt64(3)
             };
+            } // end lock
         }
 
         /// <summary>عدد العمليات لـ AET معين خلال اليوم الحالي</summary>
@@ -274,6 +291,8 @@ namespace DicomPrintServer.Services
             if (_conn == null) return 0;
             string today = DateTime.UtcNow.ToString("yyyy-MM-dd");
 
+            lock (_dbLock)
+            {
             using var cmd = _conn.CreateCommand();
             cmd.CommandText = """
                 SELECT COALESCE(PrintCount, 0)
@@ -284,6 +303,7 @@ namespace DicomPrintServer.Services
             cmd.Parameters.AddWithValue("$aet",  aet);
             var result = cmd.ExecuteScalar();
             return result is long l ? (int)l : 0;
+            } // end lock
         }
 
         /// <summary>تصدير CSV لآخر N عملية</summary>
@@ -338,6 +358,7 @@ namespace DicomPrintServer.Services
             if (_disposed) return;
             _disposed = true;
             _conn?.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 

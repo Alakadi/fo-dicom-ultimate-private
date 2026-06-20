@@ -2705,18 +2705,70 @@ namespace DicomPrintServer.Workers
                 string user = decoded[..sep];
                 string pass = decoded[(sep + 1)..];
 
-                if (user != _cfg.AdminUsername) return false;
+                if (!user.Equals(_cfg.AdminUsername, StringComparison.OrdinalIgnoreCase))
+                    return false;
 
-                // قارن hash إذا كان موجوداً، وإلا قبل أي كلمة مرور
-                if (string.IsNullOrEmpty(_cfg.AdminPasswordHash)) return true;
+                // إذا كان الـ hash فارغاً → ارفض دائماً (لا تسمح بدخول بدون كلمة مرور)
+                if (string.IsNullOrEmpty(_cfg.AdminPasswordHash))
+                {
+                    _logger.LogWarning("Admin API: AdminPasswordHash not set — access denied. " +
+                        "Run: DicomPrintAdminTool hash <password> and set AdminPasswordHash in appsettings.json");
+                    return false;
+                }
 
-                using var sha = System.Security.Cryptography.SHA256.Create();
-                string passHash = Convert.ToHexString(
-                    sha.ComputeHash(Encoding.UTF8.GetBytes(pass)));
-
-                return passHash.Equals(_cfg.AdminPasswordHash, StringComparison.OrdinalIgnoreCase);
+                return VerifyPassword(pass, _cfg.AdminPasswordHash);
             }
             catch { return false; }
+        }
+
+        /// <summary>
+        /// يتحقق من كلمة المرور باستخدام PBKDF2-SHA256 مع Salt.
+        /// يدعم الصيغتين: PBKDF2:{iterations}:{salt}:{hash} والـ SHA256 القديم (للتوافق).
+        /// </summary>
+        private static bool VerifyPassword(string password, string storedHash)
+        {
+            if (string.IsNullOrEmpty(storedHash)) return false;
+
+            // الصيغة الجديدة: PBKDF2:{iterations}:{salt_b64}:{hash_b64}
+            if (storedHash.StartsWith("PBKDF2:"))
+            {
+                var parts = storedHash.Split(':');
+                if (parts.Length != 4) return false;
+
+                if (!int.TryParse(parts[1], out int iterations)) return false;
+                byte[] salt        = Convert.FromBase64String(parts[2]);
+                byte[] storedBytes = Convert.FromBase64String(parts[3]);
+
+                using var pbkdf2 = new System.Security.Cryptography.Rfc2898DeriveBytes(
+                    password, salt, iterations,
+                    System.Security.Cryptography.HashAlgorithmName.SHA256);
+                byte[] computed = pbkdf2.GetBytes(32);
+
+                // مقارنة ثابتة الوقت لمنع Timing Attacks
+                return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                    computed, storedBytes);
+            }
+
+            // الصيغة القديمة: SHA256 hex (للتوافق مع الإعدادات الموجودة فقط)
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            string passHash = Convert.ToHexString(
+                sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password)));
+            return passHash.Equals(storedHash, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// يُنشئ hash آمن لكلمة المرور بصيغة PBKDF2 للتخزين في appsettings.json.
+        /// الاستخدام: DicomPrintAdminTool hash [password]
+        /// </summary>
+        public static string HashPassword(string password, int iterations = 310_000)
+        {
+            byte[] salt = new byte[16];
+            System.Security.Cryptography.RandomNumberGenerator.Fill(salt);
+            using var pbkdf2 = new System.Security.Cryptography.Rfc2898DeriveBytes(
+                password, salt, iterations,
+                System.Security.Cryptography.HashAlgorithmName.SHA256);
+            byte[] hash = pbkdf2.GetBytes(32);
+            return $"PBKDF2:{iterations}:{Convert.ToBase64String(salt)}:{Convert.ToBase64String(hash)}";
         }
 
         // ══════════════════════════════════════════════════════════════════════

@@ -179,12 +179,8 @@ namespace DicomPrintServer.Services
                 // M5: سجّل استقبال المهمة
                 _monitor.RecordJobReceived(_listenerConfig.AET, SOPInstanceUID.UID);
 
-                var thread = new Thread(DoPrint)
-                {
-                    Name         = $"PrintJob {SOPInstanceUID.UID}",
-                    IsBackground = true
-                };
-                thread.Start(filmBoxList);
+                // استخدام Task.Run بدلاً من Thread لكفاءة أفضل (Thread Pool management)
+                _ = Task.Run(() => DoPrint(filmBoxList));
             }
             catch (Exception ex)
             {
@@ -200,11 +196,10 @@ namespace DicomPrintServer.Services
         // Printing thread
         // ══════════════════════════════════════════════════════════════════════
 
-        private void DoPrint(object? state)
+        private void DoPrint(IList<FilmBox> filmBoxList)
         {
-            var filmBoxList = state as IList<FilmBox>;
             var started     = DateTime.UtcNow;
-            int pages       = filmBoxList?.Count ?? 0;
+            int pages       = filmBoxList.Count;
             string? lastJpgPath = null;
 
             try
@@ -218,7 +213,7 @@ namespace DicomPrintServer.Services
                     var jpgOutput = Path.Combine(FullPrintJobFolder, "JPG");
                     Directory.CreateDirectory(jpgOutput);
 
-                    foreach (var filmBox in filmBoxList ?? [])
+                    foreach (var filmBox in filmBoxList)
                     {
                         var annotCtx = BuildAnnotationContext(filmBox);
                         var paths    = _jpgExporter.ExportFilmBox(
@@ -231,7 +226,7 @@ namespace DicomPrintServer.Services
                 }
 
                 // ── M3: حفظ PDF ──────────────────────────────────────────────
-                if (_listenerConfig.SavePdf && filmBoxList?.Count > 0)
+                if (_listenerConfig.SavePdf && filmBoxList.Count > 0)
                 {
                     var pdfOutput = Path.Combine(FullPrintJobFolder, "PDF");
                     Directory.CreateDirectory(pdfOutput);

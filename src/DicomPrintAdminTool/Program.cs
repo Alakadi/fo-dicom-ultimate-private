@@ -34,8 +34,9 @@ return command switch
     "issue"        => DoIssue(args),
     "verify"       => DoVerify(args),
     "info"         => DoInfo(args),
+    "hash"         => DoHashPassword(args),
     "help"         => DoHelp(),
-    _         => DoUnknown(command)
+    _              => DoUnknown(command)
 };
 
 // ════════════════════════════════════════════════════════════
@@ -280,12 +281,55 @@ static void ShowHelp()
     Console.WriteLine("  issue  [private.pem] Create a new signed license (interactive)");
     Console.WriteLine("  verify <file> [pub]  Verify a license file signature");
     Console.WriteLine("  info   <file>        Show license details");
+    Console.WriteLine("  hash   <password>    Generate PBKDF2 hash for AdminPasswordHash setting");
     Console.WriteLine();
     Console.WriteLine("Workflow:");
     Console.WriteLine("  1. admintool keygen");
     Console.WriteLine("  2. Copy public_key.pem into LicenseManager.PublicKeyPem");
     Console.WriteLine("  3. admintool issue  → creates license_<id>.key");
     Console.WriteLine("  4. Send license_<id>.key to customer as license.key");
+    Console.WriteLine();
+    Console.WriteLine("Admin Password Setup:");
+    Console.WriteLine("  admintool hash MySecretPassword123");
+    Console.WriteLine("  → Copy the output to appsettings.json → PrintServer.AdminApi.AdminPasswordHash");
+}
+
+// ════════════════════════════════════════════════════════════
+// hash — توليد PBKDF2 hash لكلمة مرور Admin API
+// ════════════════════════════════════════════════════════════
+static int DoHashPassword(string[] args)
+{
+    string password = args.Length > 1
+        ? args[1]
+        : Prompt("Password to hash:", "");
+
+    if (string.IsNullOrWhiteSpace(password))
+    {
+        Console.Error.WriteLine("❌ Password cannot be empty.");
+        return 1;
+    }
+
+    const int iterations = 310_000; // OWASP 2023 recommendation for PBKDF2-SHA256
+    byte[] salt = new byte[16];
+    System.Security.Cryptography.RandomNumberGenerator.Fill(salt);
+    using var pbkdf2 = new System.Security.Cryptography.Rfc2898DeriveBytes(
+        password, salt, iterations,
+        System.Security.Cryptography.HashAlgorithmName.SHA256);
+    byte[] hash = pbkdf2.GetBytes(32);
+    string result = $"PBKDF2:{iterations}:{Convert.ToBase64String(salt)}:{Convert.ToBase64String(hash)}";
+
+    Console.WriteLine();
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine("✅ PBKDF2 Hash generated:");
+    Console.ResetColor();
+    Console.WriteLine();
+    Console.WriteLine(result);
+    Console.WriteLine();
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.WriteLine("📋 Copy the above value to appsettings.json:");
+    Console.WriteLine("   PrintServer → AdminApi → AdminPasswordHash");
+    Console.ResetColor();
+    return 0;
 }
 
 // ════════════════════════════════════════════════════════════

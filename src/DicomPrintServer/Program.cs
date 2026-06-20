@@ -101,7 +101,11 @@ try
             services.AddSingleton<TrialManager>();
             services.AddSingleton<SecurityGuard>();
             services.AddSingleton<ImageHostingService>();
-            services.AddSingleton<WhatsAppNotifier>();
+            // ── WhatsApp: استخدام IHttpClientFactory لتجنب socket exhaustion ──
+            services.AddHttpClient<WhatsAppNotifier>(client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(30);
+            });
             services.AddSingleton<MultiPortManager>();
             services.AddSingleton<PdfSessionManager>();
             services.AddSingleton<IConnectionTracker, ConnectionTracker>();
